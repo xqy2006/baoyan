@@ -283,6 +283,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
     let snapshot:any = null;
     try { const r = await ensureRemoteFilesById(id); uploadFailures = r.failures; snapshot = r.snapshot; } catch(e:any){ uploadFailures.push('文件批量上传过程异常'); }
     const payloadObj = buildPayload(true, snapshot); // 只包含已成功上传（有 id）的文件
+    if(!silent) console.debug('[APPLICATION][SAVE_DRAFT] id=', id, 'snapshot=', snapshot, 'payload.uploadedFiles=', payloadObj.uploadedFiles);
     let payload: string; try { payload = JSON.stringify(payloadObj); } catch { if(!silent) setErrorMsg('序列化失败'); return; }
     const r = await fetchWithAuth(`/api/applications/${id}/draft`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: payload });
     if(r.ok){
@@ -343,10 +344,14 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
         const ca = await create.json();
         newId = ca.id; setApplicationId(ca.id);
       }
-      await saveDraftRemoteById(newId!, true); // 确保草稿内容写入（后台合并）
+      // 先保存草稿（含首次上传）
+      await saveDraftRemoteById(newId!, true);
+      // 第二次强制抓取最新文件快照（防止提交前刚上传）
+      const { snapshot } = await ensureRemoteFilesById(newId!);
       await patchAcademicIfNeeded();
-      const finalPayload = JSON.stringify(buildPayload(true));
-      console.debug('[APPLICATION][SUBMIT] id=', newId, 'payloadLength=', finalPayload.length, 'preview=', finalPayload.slice(0,300));
+      const finalPayloadObj = buildPayload(true, snapshot);
+      const finalPayload = JSON.stringify(finalPayloadObj);
+      console.debug('[APPLICATION][SUBMIT] id=', newId, 'files snapshot=', snapshot, 'payloadUploadedFiles=', finalPayloadObj.uploadedFiles);
       const r = await fetchWithAuth(`/api/applications/${newId}/submit`, { method:'POST', headers:{'Content-Type':'application/json'}, body: finalPayload });
       if(!r.ok){ const err = await r.json().catch(()=>({})); const msg = err.error||'提交失败'; setErrorMsg(msg); toast.error(msg); return; }
       toast.success('提交成功');
@@ -377,9 +382,10 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
     const sanitizeProof = (meta:any)=> (forRemote? (isLocalMeta(meta)? null: meta) : meta);
     const mapWithProof = <T extends { proofFile:any }>(arr:T[]) => arr.map(item=> ({ ...item, proofFile: sanitizeProof(item.proofFile) }));
     const uploadedFiles = (()=>{
+      const remoteTranscript = (transcriptFile && !isLocalMeta(transcriptFile))? [transcriptFile] : [];
       if(!forRemote){
         return {
-          transcripts: transcriptFile && !isLocalMeta(transcriptFile)? [transcriptFile]: [],
+          transcripts: remoteTranscript,
           publicationProofs: publications.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile),
           competitionProofs: competitions.filter(c=>c.proofFile && !isLocalMeta(c.proofFile)).map(c=>c.proofFile),
           patentProofs: patents.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile),
@@ -388,18 +394,21 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
         };
       }
       if(snapshot){
+        // 如果 snapshot 没有捕获到成绩单但 state 中已有远程成绩单，则补进去
+        const snapTrans = (snapshot.transcripts||[]).filter((f:any)=>f && f.id);
+        const finalTrans = snapTrans.length>0? snapTrans : remoteTranscript;
         return {
-          transcripts: (snapshot.transcripts||[]).filter(f=>f && f.id),
-          publicationProofs: (snapshot.publicationProofs||[]).filter(f=>f && f.id),
-            competitionProofs: (snapshot.competitionProofs||[]).filter(f=>f && f.id),
-            patentProofs: (snapshot.patentProofs||[]).filter(f=>f && f.id),
-            honorProofs: (snapshot.honorProofs||[]).filter(f=>f && f.id),
-            innovationProofs: (snapshot.innovationProofs||[]).filter(f=>f && f.id)
+          transcripts: finalTrans,
+          publicationProofs: (snapshot.publicationProofs||[]).filter((f:any)=>f && f.id),
+          competitionProofs: (snapshot.competitionProofs||[]).filter((f:any)=>f && f.id),
+          patentProofs: (snapshot.patentProofs||[]).filter((f:any)=>f && f.id),
+          honorProofs: (snapshot.honorProofs||[]).filter((f:any)=>f && f.id),
+          innovationProofs: (snapshot.innovationProofs||[]).filter((f:any)=>f && f.id)
         };
       }
       // fallback 原实现
       return {
-        transcripts: transcriptFile && !isLocalMeta(transcriptFile)? [transcriptFile]: [],
+        transcripts: remoteTranscript,
         publicationProofs: publications.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile),
         competitionProofs: competitions.filter(c=>c.proofFile && !isLocalMeta(c.proofFile)).map(c=>c.proofFile),
         patentProofs: patents.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile),
