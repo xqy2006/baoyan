@@ -1,0 +1,57 @@
+version: '3.9'
+services:
+  db:
+    image: mysql:8.3
+    container_name: xmudemo-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-RootChangeMe123!}
+      MYSQL_DATABASE: ${DB_NAME:-xmudemo}
+      # Create a dedicated application user (do NOT set to 'root')
+      MYSQL_USER: ${DB_USERNAME:-appuser}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-AppChangeMe123!}
+    command: ["mysqld", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DB_PASSWORD:-AppChangeMe123!}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  backend:
+    build: .
+    image: xmudemo-backend:latest
+    container_name: xmudemo-backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_PORT: ${APP_PORT:-8080}
+      DB_URL: jdbc:mysql://db:3306/${DB_NAME:-xmudemo}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+      DB_USERNAME: ${DB_USERNAME:-appuser}
+      DB_PASSWORD: ${DB_PASSWORD:-AppChangeMe123!}
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_ME_TO_A_LONG_RANDOM_SECRET}
+      JAVA_OPTS: ${JAVA_OPTS:-"-Xms256m -Xmx512m"}
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads_data:/app/uploads
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    image: xmudemo-frontend:latest
+    container_name: xmudemo-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  uploads_data:

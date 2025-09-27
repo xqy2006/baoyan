@@ -1,0 +1,319 @@
+package com.xuqinyang.xmudemo.controller;
+
+import com.xuqinyang.xmudemo.dto.CreateUserRequest;
+import com.xuqinyang.xmudemo.dto.ImportResult;
+import com.xuqinyang.xmudemo.dto.ImportRecord;
+import com.xuqinyang.xmudemo.dto.ChangePasswordRequest;
+import com.xuqinyang.xmudemo.dto.ResetPasswordRequest;
+import com.xuqinyang.xmudemo.dto.AcademicUpdateRequest;
+import com.xuqinyang.xmudemo.model.Role;
+import com.xuqinyang.xmudemo.model.User;
+import com.xuqinyang.xmudemo.repository.UserRepository;
+import com.xuqinyang.xmudemo.service.UserService;
+import com.xuqinyang.xmudemo.repository.ImportHistoryRepository;
+import com.xuqinyang.xmudemo.model.ImportHistory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
+
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+
+    private static final Logger log = LoggerFactory.getLogger(UserController.class);
+
+    @Autowired
+    private UserService userService;
+    @Autowired
+    private UserRepository userRepository;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+    @Autowired
+    private ImportHistoryRepository importHistoryRepository;
+
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @PostMapping("/import")
+    public ResponseEntity<ImportResult> importUsers(@RequestParam("file") MultipartFile file) {
+        log.info("[USER][IMPORT] file={} size={}B", file.getOriginalFilename(), file.getSize());
+        try {
+            ImportResult result = userService.importUsersFromExcel(file);
+            log.info("[USER][IMPORT] success success={} failed={} warnings={}", result.getSuccess(), result.getFailed(), result.getWarnings());
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("[USER][IMPORT] failed: {}", e.getMessage(), e);
+            List<ImportRecord> list = Collections.singletonList(
+                    new ImportRecord(0, "", "failed", "导入失败: " + e.getMessage())
+            );
+            return ResponseEntity.badRequest().body(new ImportResult(list));
+        }
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<Map<String, Object>> me() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String studentId = auth.getName();
+        Optional<User> userOpt = userRepository.findByStudentId(studentId);
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        User user = userOpt.get();
+        Map<String, Object> body = new HashMap<>();
+        body.put("studentId", user.getStudentId());
+        body.put("roles", user.getRoles());
+        // primary role (任意一个)
+        body.put("role", user.getRoles().stream().findFirst().orElse(null));
+        body.put("name", user.getName());
+        body.put("department", user.getDepartment());
+        body.put("major", user.getMajor());
+        body.put("gpa", user.getGpa());
+        body.put("academicRank", user.getAcademicRank());
+        body.put("majorTotal", user.getMajorTotal());
+        return ResponseEntity.ok(body);
+    }
+
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @GetMapping("")
+    public ResponseEntity<List<Map<String,Object>>> listUsers() {
+        List<Map<String,Object>> list = new ArrayList<>();
+        for (User u : userRepository.findAll()) {
+            Map<String,Object> m = new HashMap<>();
+            m.put("studentId", u.getStudentId());
+            m.put("name", u.getName());
+            m.put("department", u.getDepartment());
+            m.put("major", u.getMajor());
+            m.put("gpa", u.getGpa());
+            m.put("academicRank", u.getAcademicRank());
+            m.put("majorTotal", u.getMajorTotal());
+            m.put("roles", u.getRoles());
+            m.put("role", u.getRoles().stream().findFirst().orElse(null));
+            list.add(m);
+        }
+        log.debug("[USER][LIST] size={}", list.size());
+        return ResponseEntity.ok(list);
+    }
+
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @PostMapping("")
+    public ResponseEntity<?> createUser(@RequestBody CreateUserRequest req) {
+        log.info("[USER][CREATE] studentId={} role={}", req.getStudentId(), req.getRole());
+        if (req.getStudentId()==null || req.getStudentId().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error","学号不能为空"));
+        }
+        if (userRepository.findByStudentId(req.getStudentId()).isPresent()) {
+            return ResponseEntity.badRequest().body(Map.of("error","学号已存在"));
+        }
+        if (req.getPassword()==null || req.getPassword().length()<4) {
+            return ResponseEntity.badRequest().body(Map.of("error","密码至少4位"));
+        }
+        Role role;
+        try { role = Role.valueOf(req.getRole().toUpperCase()); } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error","角色无效"));
+        }
+        if (role==Role.STUDENT) {
+            if (req.getName()==null || req.getName().isBlank() ||
+                req.getDepartment()==null || req.getDepartment().isBlank() ||
+                req.getMajor()==null || req.getMajor().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error","学生必须填写姓名/学院/专业"));
+            }
+        }
+        User u = new User();
+        u.setStudentId(req.getStudentId());
+        u.setPassword(passwordEncoder.encode(req.getPassword()));
+        u.setRoles(Set.of(role));
+        u.setName(req.getName());
+        u.setDepartment(req.getDepartment());
+        u.setMajor(req.getMajor());
+        userRepository.save(u);
+        log.info("[USER][CREATE] success studentId={} role={}", u.getStudentId(), role);
+        Map<String,Object> resp = new HashMap<>();
+        resp.put("studentId", u.getStudentId());
+        resp.put("name", u.getName());
+        resp.put("department", u.getDepartment());
+        resp.put("major", u.getMajor());
+        resp.put("gpa", u.getGpa());
+        resp.put("academicRank", u.getAcademicRank());
+        resp.put("majorTotal", u.getMajorTotal());
+        resp.put("roles", u.getRoles());
+        resp.put("role", role);
+        return ResponseEntity.ok(resp);
+    }
+
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @DeleteMapping("/{studentId}")
+    public ResponseEntity<?> deleteUser(@PathVariable String studentId) {
+        log.warn("[USER][DELETE] attempt studentId={}", studentId);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getName().equals(studentId)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "不能删除当前登录用户"));
+        }
+        return userRepository.findByStudentId(studentId)
+                .map(u -> {
+                    userRepository.delete(u);
+                    log.warn("[USER][DELETE] success studentId={}", studentId);
+                    return ResponseEntity.ok(Map.of("message", "删除成功"));
+                })
+                .orElseGet(() -> {
+                    log.warn("[USER][DELETE] not_found studentId={}", studentId);
+                    return ResponseEntity.status(404).body(Map.of("error", "用户不存在"));
+                });
+    }
+
+    // 修改密码（所有已登录用户）
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(@RequestBody ChangePasswordRequest req) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String studentId = auth.getName();
+        Optional<User> opt = userRepository.findByStudentId(studentId);
+        if (opt.isEmpty()) return ResponseEntity.status(404).body(Map.of("error","用户不存在"));
+        User user = opt.get();
+        if (req.getOldPassword()==null || req.getNewPassword()==null) {
+            return ResponseEntity.badRequest().body(Map.of("error","参数缺失"));
+        }
+        if (!passwordEncoder.matches(req.getOldPassword(), user.getPassword())) {
+            return ResponseEntity.badRequest().body(Map.of("error","原密码不正确"));
+        }
+        if (req.getNewPassword().length()<4) {
+            return ResponseEntity.badRequest().body(Map.of("error","新密码至少4位"));
+        }
+        user.setPassword(passwordEncoder.encode(req.getNewPassword()));
+        userRepository.save(user);
+        return ResponseEntity.ok(Map.of("message","密码修改成功"));
+    }
+
+    // 管理员重置任意用户密码
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @PostMapping("/{studentId}/reset-password")
+    public ResponseEntity<?> resetPassword(@PathVariable String studentId, @RequestBody ResetPasswordRequest req) {
+        if (req.getNewPassword()==null || req.getNewPassword().length()<4) {
+            return ResponseEntity.badRequest().body(Map.of("error","新密码至少4位"));
+        }
+        return userRepository.findByStudentId(studentId).map(u -> {
+            u.setPassword(passwordEncoder.encode(req.getNewPassword()));
+            userRepository.save(u);
+            return ResponseEntity.ok(Map.of("message","密码已重置"));
+        }).orElseGet(() -> ResponseEntity.status(404).body(Map.of("error","用户不存在")));
+    }
+
+    // 管理员更新单个用户学业信息（行内编辑）
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @PatchMapping("/{studentId}/academic")
+    public ResponseEntity<?> updateAcademic(@PathVariable String studentId, @RequestBody AcademicUpdateRequest req) {
+        return userRepository.findByStudentId(studentId).map(u -> {
+            int updates=0; List<String> ignored=new ArrayList<>();
+            if (req.getName()!=null && !req.getName().isBlank() && !req.getName().equals(u.getName())) { u.setName(req.getName().trim()); updates++; }
+            if (req.getDepartment()!=null && !req.getDepartment().isBlank() && !req.getDepartment().equals(u.getDepartment())) { u.setDepartment(req.getDepartment().trim()); updates++; }
+            if (req.getMajor()!=null && !req.getMajor().isBlank() && !req.getMajor().equals(u.getMajor())) { u.setMajor(req.getMajor().trim()); updates++; }
+            if (req.getGpa()!=null) { double g=req.getGpa(); if (g>=0 && g<=4) { u.setGpa(g); updates++; } else ignored.add("GPA"); }
+            if (req.getAcademicRank()!=null) { int r=req.getAcademicRank(); if (r>0) { u.setAcademicRank(r); updates++; } else ignored.add("学业排名"); }
+            if (req.getMajorTotal()!=null) { int t=req.getMajorTotal(); if (t>0) { u.setMajorTotal(t); updates++; } else ignored.add("专业总人数"); }
+            userRepository.save(u);
+            Map<String,Object> body = new HashMap<>();
+            body.put("studentId", u.getStudentId());
+            body.put("updates", updates);
+            body.put("ignored", ignored);
+            body.put("gpa", u.getGpa());
+            body.put("academicRank", u.getAcademicRank());
+            body.put("majorTotal", u.getMajorTotal());
+            body.put("name", u.getName());
+            body.put("department", u.getDepartment());
+            body.put("major", u.getMajor());
+            return ResponseEntity.ok(body);
+        }).orElseGet(() -> ResponseEntity.status(404).body(Map.of("error","用户不存在")));
+    }
+
+    // 学生自助更新学业信息
+    @PatchMapping("/me/academic")
+    public ResponseEntity<?> selfUpdateAcademic(@RequestBody AcademicUpdateRequest req){
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String studentId = auth.getName();
+        Optional<User> opt = userRepository.findByStudentId(studentId);
+        if (opt.isEmpty()) return ResponseEntity.status(404).body(Map.of("error","用户不存在"));
+        User u = opt.get();
+        int updates=0; List<String> ignored = new ArrayList<>();
+        if (req.getName()!=null && (u.getName()==null || u.getName().isBlank())) { u.setName(req.getName().trim()); updates++; } else if (req.getName()!=null && !req.getName().equals(u.getName())) ignored.add("name");
+        if (req.getDepartment()!=null && (u.getDepartment()==null || u.getDepartment().isBlank())) { u.setDepartment(req.getDepartment().trim()); updates++; } else if (req.getDepartment()!=null && !req.getDepartment().equals(u.getDepartment())) ignored.add("department");
+        if (req.getMajor()!=null && (u.getMajor()==null || u.getMajor().isBlank())) { u.setMajor(req.getMajor().trim()); updates++; } else if (req.getMajor()!=null && !req.getMajor().equals(u.getMajor())) ignored.add("major");
+        if (req.getGpa()!=null) {
+            if (u.getGpa()==null) { double g=req.getGpa(); if (g>=0 && g<=4) { u.setGpa(g); updates++; } else ignored.add("gpa范围"); } else if (!req.getGpa().equals(u.getGpa())) ignored.add("gpa已存在");
+        }
+        if (req.getAcademicRank()!=null) {
+            if (u.getAcademicRank()==null) { int r=req.getAcademicRank(); if (r>0) { u.setAcademicRank(r); updates++; } else ignored.add("学业排名范围"); } else if (!req.getAcademicRank().equals(u.getAcademicRank())) ignored.add("academicRank已存在");
+        }
+        if (req.getMajorTotal()!=null) {
+            if (u.getMajorTotal()==null) { int t=req.getMajorTotal(); if (t>0) { u.setMajorTotal(t); updates++; } else ignored.add("专业总人数范围"); } else if (!req.getMajorTotal().equals(u.getMajorTotal())) ignored.add("majorTotal已存在");
+        }
+        userRepository.save(u);
+        Map<String,Object> body = new HashMap<>();
+        body.put("updates", updates);
+        body.put("ignored", ignored);
+        body.put("studentId", u.getStudentId());
+        body.put("gpa", u.getGpa());
+        body.put("academicRank", u.getAcademicRank());
+        body.put("majorTotal", u.getMajorTotal());
+        body.put("name", u.getName());
+        body.put("department", u.getDepartment());
+        body.put("major", u.getMajor());
+        return ResponseEntity.ok(body);
+    }
+
+    // 导出全部用户（含学业）CSV
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @GetMapping("/export")
+    public ResponseEntity<ByteArrayResource> exportUsers() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("学号,姓名,学院,专业,GPA,学业排名,专业总人数,角色\n");
+        for (User u: userRepository.findAll()) {
+            String role = u.getRoles().stream().findFirst().map(Enum::name).orElse("");
+            sb.append(safe(u.getStudentId())).append(',')
+              .append(safe(u.getName())).append(',')
+              .append(safe(u.getDepartment())).append(',')
+              .append(safe(u.getMajor())).append(',')
+              .append(u.getGpa()==null?"":u.getGpa()).append(',')
+              .append(u.getAcademicRank()==null?"":u.getAcademicRank()).append(',')
+              .append(u.getMajorTotal()==null?"":u.getMajorTotal()).append(',')
+              .append(role).append('\n');
+        }
+        byte[] data = ("\uFEFF"+sb.toString()).getBytes();
+        ByteArrayResource res = new ByteArrayResource(data);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=users_export.csv")
+                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
+                .contentLength(data.length)
+                .body(res);
+    }
+
+    private String safe(String s) { return s==null?"":s.replace("\n"," ").replace(","," "); }
+
+    // 导入历史
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @GetMapping("/import-history")
+    public ResponseEntity<List<Map<String,Object>>> importHistory() {
+        List<Map<String,Object>> list = new ArrayList<>();
+        for (ImportHistory h : importHistoryRepository.findTop50ByOrderByCreatedAtDesc()) {
+            Map<String,Object> m = new HashMap<>();
+            m.put("id", h.getId());
+            m.put("filename", h.getFilename());
+            m.put("mode", h.getMode());
+            m.put("totalRecords", h.getTotalRecords());
+            m.put("success", h.getSuccess());
+            m.put("failed", h.getFailed());
+            m.put("warnings", h.getWarnings());
+            m.put("createdAt", h.getCreatedAt());
+            list.add(m);
+        }
+        return ResponseEntity.ok(list);
+    }
+}

@@ -1,0 +1,22 @@
+# Global dockerignore
+.git
+.gitignore
+**/.git
+**/.idea
+**/.vscode
+**/node_modules
+frontend/node_modules
+frontend/build
+frontend/dist
+# Maven / Gradle outputs
+**/target
+# Logs
+**/*.log
+# OS / editor
+.DS_Store
+Thumbs.db
+# Local uploads (mount as volume instead)
+uploads
+# Ignore docs (optional)
+doc
+
