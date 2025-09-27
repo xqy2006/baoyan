@@ -442,7 +442,6 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
           <div><p className="text-gray-600">专长(12%)</p><p className="text-sm md:text-lg text-indigo-600">{backendScores.specWeighted.toFixed(2)}</p></div>
           <div><p className="text-gray-600">综合(8%)</p><p className="text-sm md:text-lg text-green-600">{backendScores.perfWeighted.toFixed(2)}</p></div>
           <div><p className="text-gray-600">总分</p><p className="text-sm md:text-lg">{backendScores.total.toFixed(2)}</p></div>
-          <div className="col-span-4 text-[10px] md:text-xs text-gray-500">{applicationId? (isEditable? '已创建后端草稿，修改自动保存' : '成绩由后台计算') : '当前为本地草稿模式，数据仅保存在此浏览器，提交时才上传。'}</div>
         </CardContent>
       </Card>
 
