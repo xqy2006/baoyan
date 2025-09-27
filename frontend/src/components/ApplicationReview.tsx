@@ -15,7 +15,8 @@ import {
   Eye,
   AlertTriangle,
   Calculator,
-  Star
+  Star,
+  Printer
 } from 'lucide-react';
 
 interface ApplicationReviewProps {
@@ -25,10 +26,38 @@ interface ApplicationReviewProps {
 }
 
 export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ application, user, onBack }) => {
+  // Parse initial content to extract uploadedFiles if present
+  let initialApp: any = application;
+  try {
+    if ((application as any).content) {
+      const parsed = JSON.parse((application as any).content);
+      if (parsed.uploadedFiles) {
+        initialApp = { ...application, uploadedFiles: parsed.uploadedFiles, basicInfo: parsed.basicInfo || application.basicInfo || {}, languageScores: parsed.languageScores || application.languageScores || {}, academicAchievements: parsed.academicAchievements || application.academicAchievements || {}, comprehensivePerformance: parsed.comprehensivePerformance || application.comprehensivePerformance || {}, specialAcademicTalent: parsed.specialAcademicTalent || application.specialAcademicTalent };
+      }
+    }
+  } catch { /* ignore parse error */ }
   const [reviewComment, setReviewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [appState, setAppState] = useState<Application>(application);
+  const [appState, setAppState] = useState<Application>(initialApp);
   const isAdmin = user.role === 'ADMIN';
+  const isReviewer = user.role === 'REVIEWER';
+  const isStudent = user.role === 'STUDENT';
+
+  const downloadPdf = async () => {
+    try {
+      const res = await fetch(`/api/applications/${appState.id}/export/pdf`, { credentials:'include' });
+      if(!res.ok){ const err = await res.json().catch(()=>({})); throw new Error(err.error||'导出失败'); }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `application-${appState.id}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(a.href), 2000);
+    } catch(e:any){ alert(e.message); }
+  };
+
+  const viewFile = (id?:number) => { if(!id) return; window.open(`/api/files/${id}/raw`, '_blank'); };
+  const downloadFile = (id?:number) => { if(!id) return; window.open(`/api/files/${id}/download`, '_blank'); };
 
   // 新增：空值保护，防止 map 调用 undefined
   const uploadedFiles = appState.uploadedFiles || { languageCertificates:[], academicDocuments:[], transcripts:[], recommendationLetters:[] } as any;
@@ -40,19 +69,22 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
       const res = await fetch(`/api/applications/${id}`, { credentials:'include' });
       if (res.ok) {
         const data = await res.json();
-        const map: Record<string, Application['status']> = {
-          DRAFT: 'pending', SYSTEM_REVIEWING: 'system_reviewing', SYSTEM_APPROVED: 'system_approved', SYSTEM_REJECTED: 'system_rejected', ADMIN_REVIEWING: 'admin_reviewing', APPROVED: 'approved', REJECTED: 'rejected'
-        };
         const content = data.content? (()=>{ try { return JSON.parse(data.content);} catch { return {}; } })(): {};
+        const map: Record<string, Application['status']> = { DRAFT: 'pending', SYSTEM_REVIEWING: 'system_reviewing', SYSTEM_APPROVED: 'system_approved', SYSTEM_REJECTED: 'system_rejected', ADMIN_REVIEWING: 'admin_reviewing', APPROVED: 'approved', REJECTED: 'rejected' };
         setAppState(prev=> ({
           ...prev,
           status: map[data.status]||prev.status,
           systemReviewComment: data.systemReviewComment || prev.systemReviewComment,
-          adminReviewComment: data.adminReviewComment || prev.adminReviewComment,
-          calculatedScores: content.calculatedScores || prev.calculatedScores || { academicScore:data.academicScore||0, academicAchievementScore:data.achievementScore||0, performanceScore:data.performanceScore||0, totalScore:data.totalScore||0 },
+            adminReviewComment: data.adminReviewComment || prev.adminReviewComment,
+          calculatedScores: content.calculatedScores || { academicScore:data.academicScore||0, academicAchievementScore:data.achievementScore||0, performanceScore:data.performanceScore||0, totalScore:data.totalScore||0 },
           calculatedRaw: content.calculatedRaw || prev.calculatedRaw,
-          specialAcademicTalent: content.specialAcademicTalent || prev.specialAcademicTalent
-        }));
+          specialAcademicTalent: content.specialAcademicTalent || prev.specialAcademicTalent,
+          uploadedFiles: content.uploadedFiles || prev.uploadedFiles,
+          basicInfo: content.basicInfo || prev.basicInfo,
+          languageScores: content.languageScores || prev.languageScores,
+          academicAchievements: content.academicAchievements || prev.academicAchievements,
+          comprehensivePerformance: content.comprehensivePerformance || prev.comprehensivePerformance
+        } as any));
       }
     } catch{/* ignore */}
   };
@@ -109,8 +141,13 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
         </Button>
         <div className="flex-1">
           <h1 className="text-lg">申请审核详情</h1>
-          <p className="text-sm text-gray-600">{appState.activityName}</p>
+          <p className="text-sm text-gray-600">{(appState as any).activityName}</p>
         </div>
+        {(isAdmin || isReviewer || isStudent) && (
+          <Button variant="outline" size="sm" onClick={downloadPdf} title="导出PDF">
+            <Printer className="w-4 h-4 mr-1" />导出
+          </Button>
+        )}
         <Badge className={getStatusColor(appState.status)}>
           {appState.status === 'system_approved' ? '待管理员审核' :
            appState.status === 'approved' ? '已通过' :
@@ -427,77 +464,32 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
             </TabsContent>
 
             {/* 材料证明 */}
-            <TabsContent value="files" className="p-4 space-y-4">
-              {/* 外语成绩证明 */}
-              <div>
-                <h4 className="text-sm mb-3">外语成绩证明</h4>
-                {uploadedFiles.languageCertificates?.map((file, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded mb-2">
-                    <div>
-                      <p className="text-sm">{file.type} 成绩单</p>
-                      <p className="text-xs text-gray-500">上传时间：{file.uploadDate}</p>
+            <TabsContent value="files" className="p-4 space-y-5">
+              {(() => { const uf:any = (appState as any).uploadedFiles || {}; const Section = ({title, list}:{title:string; list:any[]}) => list && list.length>0 ? (
+                <div>
+                  <h4 className="text-sm mb-3">{title}</h4>
+                  {list.map((file,i)=>(
+                    <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded mb-2">
+                      <div>
+                        <p className="text-sm">{file.originalFilename || file.name || file.title || '文件'}{file.contentType? ` (${file.contentType})`:''}</p>
+                        <p className="text-xs text-gray-500">上传：{file.uploadedAt || file.uploadDate || '-'}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={()=>viewFile(file.id)} disabled={!file.id}><Eye className="w-3 h-3 mr-1" />查看</Button>
+                        <Button size="sm" variant="outline" onClick={()=>downloadFile(file.id)} disabled={!file.id}><Download className="w-3 h-3 mr-1" />下载</Button>
+                      </div>
                     </div>
-                    <div className="flex space-x-2">
-                      <Button size="sm" variant="outline">
-                        <Eye className="w-3 h-3 mr-1" />
-                        查看
-                      </Button>
-                      <Button size="sm" variant="outline">
-                        <Download className="w-3 h-3 mr-1" />
-                        下载
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* 学术材料证明 */}
-              <div>
-                <h4 className="text-sm mb-3">学术材料证明</h4>
-                {uploadedFiles.academicDocuments?.map((file, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded mb-2">
-                    <div>
-                      <p className="text-sm">{file.title}</p>
-                      <p className="text-xs text-gray-500">
-                        类型：{file.type} | 上传时间：{file.uploadDate}
-                      </p>
-                    </div>
-                    <div className="flex space-x-2">
-                      <Button size="sm" variant="outline">
-                        <Eye className="w-3 h-3 mr-1" />
-                        查看
-                      </Button>
-                      <Button size="sm" variant="outline">
-                        <Download className="w-3 h-3 mr-1" />
-                        下载
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* 成绩单 */}
-              <div>
-                <h4 className="text-sm mb-3">成绩单</h4>
-                {uploadedFiles.transcripts?.map((file, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded mb-2">
-                    <div>
-                      <p className="text-sm">官方成绩单</p>
-                      <p className="text-xs text-gray-500">上传时间：{file.uploadDate}</p>
-                    </div>
-                    <div className="flex space-x-2">
-                      <Button size="sm" variant="outline">
-                        <Eye className="w-3 h-3 mr-1" />
-                        查看
-                      </Button>
-                      <Button size="sm" variant="outline">
-                        <Download className="w-3 h-3 mr-1" />
-                        下载
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>) : null;
+                return <>
+                  <Section title="成绩单" list={uf.transcripts||[]} />
+                  <Section title="论文证明" list={uf.publicationProofs||[]} />
+                  <Section title="竞赛证明" list={uf.competitionProofs||[]} />
+                  <Section title="专利证明" list={uf.patentProofs||[]} />
+                  <Section title="荣誉证明" list={uf.honorProofs||[]} />
+                  <Section title="科创项目证明" list={uf.innovationProofs||[]} />
+                  {!( (uf.transcripts||[]).length + (uf.publicationProofs||[]).length + (uf.competitionProofs||[]).length + (uf.patentProofs||[]).length + (uf.honorProofs||[]).length + (uf.innovationProofs||[]).length ) && <div className="text-xs text-gray-400">暂无已上传的证明文件</div>}
+                </> })()}
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -607,3 +599,4 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
     </div>
   );
 };
+

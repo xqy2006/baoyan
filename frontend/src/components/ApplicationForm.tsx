@@ -13,10 +13,8 @@ import { useFileUpload, UploadedMeta } from './hooks/useFileUpload';
 import { useAuth } from '../context/AuthContext';
 import { TranscriptUploader } from './TranscriptUploader';
 import { Badge } from './ui/badge';
-import jsPDF from 'jspdf';
 import { useLocalTempFile } from './hooks/useLocalTempFile';
 import { ProofFileUploader } from './ProofFileUploader';
-import { ZH_FONT_NAME, ZH_FONT_FILE, ZH_FONT_BASE64 } from './fonts/zhFont';
 
 interface ApplicationFormProps {
   activity: Activity;
@@ -239,16 +237,67 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
   };
   const clearLocalDraft = () => { if(window.confirm('确定清除本地草稿?')){ localStorage.removeItem(localDraftKey); toast.success('已清除本地草稿'); } };
 
-  const saveDraftRemote = async (silent=false) => {
-    if(!applicationId) { // 没有后端 id -> 本地保存
-      saveLocalDraft(true);
-      return;
+  // 按 id 上传本地文件（提交或显式保存时使用）
+  const ensureRemoteFilesById = async (id:number) => {
+    if(!id) return { failures: [] as string[], snapshot: null as any };
+    const failures:string[] = [];
+    const snapshot = { transcripts: [] as any[], publicationProofs: [] as any[], competitionProofs: [] as any[], patentProofs: [] as any[], honorProofs: [] as any[], innovationProofs: [] as any[] };
+    const uploadOne = async (local:any, assign:(remote:any)=>void, label:string, collect:(m:any)=>void) => {
+      if(!local) return; if(!isLocalMeta(local)) { if(!collect && !isLocalMeta(local)) {/* ignore */} else if(!isLocalMeta(local)) collect(local); return; }
+      try {
+        const meta = await uploadLocalMeta(local);
+        const merged = { ...meta, previewDataUrl: local.dataUrl||local.previewDataUrl };
+        assign(merged); collect(merged);
+      } catch(e:any){ failures.push(label+':'+(e?.message||'上传失败')); }
+    };
+    await uploadOne(transcriptFile, (m)=>setTranscriptFile(m), '成绩单', (m)=>snapshot.transcripts=[m]);
+    // helpers for arrays
+    const batch = async (arr:any[], setter:(updater:(old:any[])=>any[])=>void, labelPrefix:string, collect:(m:any)=>void) => {
+      await Promise.all(arr.map(async (item,idx)=>{
+        if(!item?.proofFile){ return; }
+        if(isLocalMeta(item.proofFile)){
+          try {
+            const meta = await uploadLocalMeta(item.proofFile);
+            const merged = { ...meta, previewDataUrl: item.proofFile.dataUrl||item.proofFile.previewDataUrl };
+            setter(list=> list.map((x,i)=> i===idx? { ...x, proofFile: merged }: x));
+            collect(merged);
+          } catch(e:any){ failures.push(`${labelPrefix}${idx+1}`); }
+        } else {
+            collect(item.proofFile);
+        }
+      }));
+    };
+    await batch(publications, setPublications, '论文', (m)=>snapshot.publicationProofs.push(m));
+    await batch(competitions, setCompetitions, '竞赛', (m)=>snapshot.competitionProofs.push(m));
+    await batch(patents, setPatents, '专利', (m)=>snapshot.patentProofs.push(m));
+    await batch(honors, setHonors, '荣誉', (m)=>snapshot.honorProofs.push(m));
+    await batch(innovationProjects, setInnovationProjects, '科创', (m)=>snapshot.innovationProofs.push(m));
+    // 如果 transcript 之前就是远程的（非本地）且本次没有重新上传，需要补进 snapshot
+    if(snapshot.transcripts.length===0 && transcriptFile && !isLocalMeta(transcriptFile)) snapshot.transcripts=[transcriptFile];
+    return { failures, snapshot };
+  };
+
+  const saveDraftRemoteById = async (id:number, silent=false) => {
+    if(!id){ saveLocalDraft(true); return; }
+    let uploadFailures: string[] = [];
+    let snapshot:any = null;
+    try { const r = await ensureRemoteFilesById(id); uploadFailures = r.failures; snapshot = r.snapshot; } catch(e:any){ uploadFailures.push('文件批量上传过程异常'); }
+    const payloadObj = buildPayload(true, snapshot); // 只包含已成功上传（有 id）的文件
+    let payload: string; try { payload = JSON.stringify(payloadObj); } catch { if(!silent) setErrorMsg('序列化失败'); return; }
+    const r = await fetchWithAuth(`/api/applications/${id}/draft`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: payload });
+    if(r.ok){
+      if(!silent){
+        if(uploadFailures.length>0) setSaveMsg(`草稿已保存（${uploadFailures.length} 个文件未成功: ${uploadFailures.slice(0,3).join(',')}...)`);
+        else setSaveMsg('草稿已保存');
+      }
+    } else if(!silent){
+      setErrorMsg('草稿保存失败');
     }
-    try { await ensureRemoteFiles(); } catch { if(!silent) setErrorMsg('文件上传失败，草稿未保存'); return; }
-    const payload = JSON.stringify(buildPayload(true));
-    const r = await fetchWithAuth(`/api/applications/${applicationId}/draft`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: payload });
-    if(r.ok){ if(!silent) setSaveMsg('草稿已保存'); }
-    else if(!silent){ setErrorMsg('草稿保存失败'); }
+  };
+
+  const saveDraftRemote = async (silent=false) => {
+    if(!applicationId){ saveLocalDraft(true); return; }
+    return saveDraftRemoteById(applicationId, silent);
   };
 
   // 删除仅适用于已有后端记录（通常已提交不可删除）
@@ -288,18 +337,17 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
     setSubmitting(true);
     let newId = applicationId;
     try {
-      // 创建后端记录
       if(!newId){
         const create = await fetchWithAuth(`/api/applications/draft?activityId=${activity.id}`, { method:'POST', headers:{'Content-Type':'application/json'}, body: '{}' });
         if(!create.ok){ const err = await create.json().catch(()=>({})); const msg = err.error||'创建申请失败'; setErrorMsg(msg); toast.error(msg); return; }
         const ca = await create.json();
         newId = ca.id; setApplicationId(ca.id);
       }
-      // 确保本地文件全部上传
-      try { await ensureRemoteFiles(); } catch(e:any){ setErrorMsg('文件上传失败，提交中止'); setSubmitting(false); return; }
-      await saveDraftRemote(true);
+      await saveDraftRemoteById(newId!, true); // 确保草稿内容写入（后台合并）
       await patchAcademicIfNeeded();
-      const r = await fetchWithAuth(`/api/applications/${newId}/submit`, { method:'POST' });
+      const finalPayload = JSON.stringify(buildPayload(true));
+      console.debug('[APPLICATION][SUBMIT] id=', newId, 'payloadLength=', finalPayload.length, 'preview=', finalPayload.slice(0,300));
+      const r = await fetchWithAuth(`/api/applications/${newId}/submit`, { method:'POST', headers:{'Content-Type':'application/json'}, body: finalPayload });
       if(!r.ok){ const err = await r.json().catch(()=>({})); const msg = err.error||'提交失败'; setErrorMsg(msg); toast.error(msg); return; }
       toast.success('提交成功');
       localStorage.removeItem(localDraftKey);
@@ -325,9 +373,40 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
     try { await fetchWithAuth('/api/users/me/academic', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); } catch {}
   };
 
-  const buildPayload = (forRemote:boolean) => {
+  const buildPayload = (forRemote:boolean, snapshot?:any) => {
     const sanitizeProof = (meta:any)=> (forRemote? (isLocalMeta(meta)? null: meta) : meta);
     const mapWithProof = <T extends { proofFile:any }>(arr:T[]) => arr.map(item=> ({ ...item, proofFile: sanitizeProof(item.proofFile) }));
+    const uploadedFiles = (()=>{
+      if(!forRemote){
+        return {
+          transcripts: transcriptFile && !isLocalMeta(transcriptFile)? [transcriptFile]: [],
+          publicationProofs: publications.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile),
+          competitionProofs: competitions.filter(c=>c.proofFile && !isLocalMeta(c.proofFile)).map(c=>c.proofFile),
+          patentProofs: patents.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile),
+          honorProofs: honors.filter(h=>h.proofFile && !isLocalMeta(h.proofFile)).map(h=>h.proofFile),
+          innovationProofs: innovationProjects.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile)
+        };
+      }
+      if(snapshot){
+        return {
+          transcripts: (snapshot.transcripts||[]).filter(f=>f && f.id),
+          publicationProofs: (snapshot.publicationProofs||[]).filter(f=>f && f.id),
+            competitionProofs: (snapshot.competitionProofs||[]).filter(f=>f && f.id),
+            patentProofs: (snapshot.patentProofs||[]).filter(f=>f && f.id),
+            honorProofs: (snapshot.honorProofs||[]).filter(f=>f && f.id),
+            innovationProofs: (snapshot.innovationProofs||[]).filter(f=>f && f.id)
+        };
+      }
+      // fallback 原实现
+      return {
+        transcripts: transcriptFile && !isLocalMeta(transcriptFile)? [transcriptFile]: [],
+        publicationProofs: publications.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile),
+        competitionProofs: competitions.filter(c=>c.proofFile && !isLocalMeta(c.proofFile)).map(c=>c.proofFile),
+        patentProofs: patents.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile),
+        honorProofs: honors.filter(h=>h.proofFile && !isLocalMeta(h.proofFile)).map(h=>h.proofFile),
+        innovationProofs: innovationProjects.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile)
+      };
+    })();
     return {
       basicInfo,
       languageScores,
@@ -335,50 +414,8 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
       comprehensivePerformance: { volunteerService:{ hours: volunteerHours, segments: volunteerSegments.map(s=>({hours:+s.hours||0,type:s.type})), awards: volunteerAwards }, socialWork, honors: mapWithProof(honors), sports, internship: internshipDuration, militaryYears },
       personalStatement,
       specialAcademicTalent: specialTalentApplying? { isApplying:true, description:specialTalentDesc, achievements:specialTalentAchievements, professors: specialTalentProfessors }: undefined,
-      uploadedFiles: {
-        transcripts: transcriptFile && !isLocalMeta(transcriptFile)? [transcriptFile]: [],
-        publicationProofs: publications.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile),
-        competitionProofs: competitions.filter(c=>c.proofFile && !isLocalMeta(c.proofFile)).map(c=>c.proofFile),
-        patentProofs: patents.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile),
-        honorProofs: honors.filter(h=>h.proofFile && !isLocalMeta(h.proofFile)).map(h=>h.proofFile),
-        innovationProofs: innovationProjects.filter(p=>p.proofFile && !isLocalMeta(p.proofFile)).map(p=>p.proofFile)
-      }
+      uploadedFiles
     };
-  };
-
-  const exportPdf = () => {
-    const doc = new jsPDF({ unit:'pt', format:'a4' });
-    // 注册中文字体
-    try { doc.addFileToVFS(ZH_FONT_FILE, ZH_FONT_BASE64); doc.addFont(ZH_FONT_FILE, ZH_FONT_NAME, 'normal'); doc.setFont(ZH_FONT_NAME); } catch { /* ignore font errors */ }
-    const lineHeight = 16; const marginX = 40; let y = 50; const pageH = doc.internal.pageSize.getHeight(); const pageW = doc.internal.pageSize.getWidth();
-    const addLine = (text:string, bold=false) => { const lines = doc.splitTextToSize(text, pageW - marginX*2); lines.forEach(l=>{ if(y > pageH - 60){ doc.addPage(); y = 50; } doc.setFont(ZH_FONT_NAME,'normal'); if(bold) doc.setFontSize(14); else doc.setFontSize(12); doc.text(l, marginX, y); if(bold) doc.setFontSize(12); y += lineHeight; }); };
-    const addImageBlock = (label:string, dataUrl:string) => { try { const img = new Image(); img.src = dataUrl; const maxW = pageW - marginX*2; const maxH = 280; const add = () => { const w = img.width||1; const h = img.height||1; const scale = Math.min(maxW / w, maxH / h, 1); const drawW = w * scale; const drawH = h * scale; if(y + drawH + 40 > pageH){ doc.addPage(); y = 50; } doc.setFont(undefined,'bold'); doc.text(label, marginX, y); y += 14; doc.addImage(img, dataUrl.startsWith('data:image/png')? 'PNG':'JPEG', marginX, y, drawW, drawH); y += drawH + 18; }; if(img.complete) add(); else img.onload = add; } catch {/* ignore */} };
-    // 文本部分
-    addLine(`推免申请导出 - ${activity.name}`, true);
-    addLine(`姓名: ${basicInfo.name}  学号: ${basicInfo.studentId}`);
-    addLine(`系别: ${basicInfo.department}  专业: ${basicInfo.major}`);
-    addLine(`GPA: ${basicInfo.gpa} 排名: ${basicInfo.academicRanking}/${basicInfo.totalStudents}`);
-    addLine(''); addLine('【个人陈述】', true); addLine(personalStatement||'(未填写)');
-    addLine(''); addLine('【论文发表】', true); publications.forEach((p,i)=> addLine(`${i+1}. ${p.title||'(未填)'} / ${p.type} / 作者排名 ${p.authorRank}/${p.totalAuthors}${p.isCoFirst?' (共同一作)':''}`));
-    addLine(''); addLine('【竞赛】', true); competitions.forEach((c,i)=> addLine(`${i+1}. ${c.name||'(未填)'} / ${c.level} / ${c.award}${c.isTeam?` 团队(${c.teamRank||'-'}/${c.totalTeamMembers||'-'})`:''}`));
-    addLine(''); addLine('【专利/软著】', true); patents.forEach((p,i)=> addLine(`${i+1}. ${p.title||'(未填)'} / ${p.patentNumber||''} / 排名${p.authorRank}`));
-    addLine(''); addLine('【科创项目】', true); innovationProjects.forEach((p,i)=> addLine(`${i+1}. ${p.name||'(未填)'} / ${p.level} / ${p.role} / ${p.status}`));
-    addLine(''); addLine('【荣誉称号】', true); honors.forEach((h,i)=> addLine(`${i+1}. ${h.title||'(未填)'} / ${h.level} / ${h.year}${h.isCollective?' 集体':''}`));
-    addLine(''); addLine('【社会工作】', true); socialWork.forEach((s,i)=> addLine(`${i+1}. ${s.position||'(未填)'} / ${s.level} / ${s.year} / 评分${s.rating}`));
-    addLine(''); addLine('【志愿服务】', true); addLine(`总时长: ${volunteerHours||'(未填)'} 小时; 分段:${volunteerSegments.length}条`);
-    addLine(''); addLine('【体育比赛】', true); sports.forEach((sp,i)=> addLine(`${i+1}. ${sp.name||'(未填)'} / ${sp.scope} / ${sp.result}${sp.isTeam?` 团队人数${sp.teamSize}`:''}`));
-    if(specialTalentApplying){ addLine(''); addLine('【特殊学术专长申请】', true); addLine('简介: '+(specialTalentDesc||'(未填)')); addLine('成果: '+(specialTalentAchievements||'(未填)')); }
-    // 图片附件汇总
-    const images: { label:string; dataUrl:string }[] = [];
-    if(transcriptFile && isImageMeta(transcriptFile)) images.push({ label:'成绩单', dataUrl: transcriptFile.dataUrl||transcriptFile.previewDataUrl });
-    publications.forEach((p,i)=>{ if(p.proofFile && isImageMeta(p.proofFile)) images.push({ label:`论文证明${i+1}`, dataUrl: p.proofFile.dataUrl||p.proofFile.previewDataUrl }); });
-    competitions.forEach((c,i)=>{ if(c.proofFile && isImageMeta(c.proofFile)) images.push({ label:`竞赛证明${i+1}`, dataUrl: c.proofFile.dataUrl||c.proofFile.previewDataUrl }); });
-    patents.forEach((p,i)=>{ if(p.proofFile && isImageMeta(p.proofFile)) images.push({ label:`专利证明${i+1}`, dataUrl: p.proofFile.dataUrl||p.proofFile.previewDataUrl }); });
-    honors.forEach((h,i)=>{ if(h.proofFile && isImageMeta(h.proofFile)) images.push({ label:`荣誉证明${i+1}`, dataUrl: h.proofFile.dataUrl||h.proofFile.previewDataUrl }); });
-    innovationProjects.forEach((p,i)=>{ if(p.proofFile && isImageMeta(p.proofFile)) images.push({ label:`科创项目证明${i+1}`, dataUrl: p.proofFile.dataUrl||p.proofFile.previewDataUrl }); });
-    if(images.length){ addLine(''); addLine('【图片附件】', true); images.forEach(img=> img.dataUrl && addImageBlock(img.label, img.dataUrl)); }
-    const fileName = `推免申请_${basicInfo.name||'未命名'}_${activity.id}.pdf`;
-    setTimeout(()=>{ doc.save(fileName); toast.success('已导出 PDF'); }, 400);
   };
 
   // 更新 saveDraft 逻辑：本地或后端
@@ -430,7 +467,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
         <p className="text-xs md:text-sm text-gray-600 truncate max-w-[30vw] md:max-w-none">{activity.name}</p>
         <Badge variant={isEditable? 'secondary':'outline'} className="text-[10px] md:text-xs shrink-0">{submittedAt? status : '本地草稿'}</Badge>
         <div className="ml-auto flex items-center gap-2 shrink-0">
-          {isEditable && <Button type="button" size="icon" variant="outline" onClick={exportPdf} className="md:px-2" title="导出PDF"><FileText className="w-4 h-4" /><span className="hidden md:inline ml-1">导出</span></Button>}
+          {/* 已移除导出按钮 */}
           {isEditable && <Button variant="destructive" size="icon" onClick={deleteDraft} title={applicationId? '删除申请记录':'清除本地草稿'}><Trash2 className="w-4 h-4" /><span className="hidden md:inline ml-1">{applicationId? '删除':'清除'}</span></Button>}
           {!isEditable && applicationId && <Button variant="outline" size="icon" onClick={fetchBackendScores} title="刷新成绩"><ArrowLeft className="rotate-180 w-4 h-4" /><span className="hidden md:inline ml-1">刷新</span></Button>}
         </div>

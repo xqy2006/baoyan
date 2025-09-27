@@ -73,6 +73,24 @@ public class FileController {
         }).orElse(ResponseEntity.status(404).body(Map.of("error","文件不存在")));
     }
 
+    // Inline preview endpoint (e.g., images / pdf in browser)
+    @GetMapping("/{id}/raw")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> raw(@PathVariable Long id){
+        return fileService.find(id).map(meta -> {
+            try {
+                byte[] data = fileService.read(meta);
+                return ResponseEntity.ok()
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\""+meta.getOriginalFilename()+"\"")
+                        .contentType(MediaType.parseMediaType(meta.getContentType()==null?"application/octet-stream":meta.getContentType()))
+                        .contentLength(data.length)
+                        .body(new ByteArrayResource(data));
+            } catch (IOException e){
+                return ResponseEntity.internalServerError().body(Map.of("error","读取文件失败"));
+            }
+        }).orElse(ResponseEntity.status(404).body(Map.of("error","文件不存在")));
+    }
+
     @DeleteMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> delete(@PathVariable Long id){
@@ -91,4 +109,3 @@ public class FileController {
         }).orElse(ResponseEntity.status(404).body(Map.of("error","文件不存在")));
     }
 }
-

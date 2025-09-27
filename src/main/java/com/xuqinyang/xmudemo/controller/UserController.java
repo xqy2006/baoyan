@@ -243,18 +243,12 @@ public class UserController {
         if (opt.isEmpty()) return ResponseEntity.status(404).body(Map.of("error","用户不存在"));
         User u = opt.get();
         int updates=0; List<String> ignored = new ArrayList<>();
-        if (req.getName()!=null && (u.getName()==null || u.getName().isBlank())) { u.setName(req.getName().trim()); updates++; } else if (req.getName()!=null && !req.getName().equals(u.getName())) ignored.add("name");
-        if (req.getDepartment()!=null && (u.getDepartment()==null || u.getDepartment().isBlank())) { u.setDepartment(req.getDepartment().trim()); updates++; } else if (req.getDepartment()!=null && !req.getDepartment().equals(u.getDepartment())) ignored.add("department");
-        if (req.getMajor()!=null && (u.getMajor()==null || u.getMajor().isBlank())) { u.setMajor(req.getMajor().trim()); updates++; } else if (req.getMajor()!=null && !req.getMajor().equals(u.getMajor())) ignored.add("major");
-        if (req.getGpa()!=null) {
-            if (u.getGpa()==null) { double g=req.getGpa(); if (g>=0 && g<=4) { u.setGpa(g); updates++; } else ignored.add("gpa范围"); } else if (!req.getGpa().equals(u.getGpa())) ignored.add("gpa已存在");
-        }
-        if (req.getAcademicRank()!=null) {
-            if (u.getAcademicRank()==null) { int r=req.getAcademicRank(); if (r>0) { u.setAcademicRank(r); updates++; } else ignored.add("学业排名范围"); } else if (!req.getAcademicRank().equals(u.getAcademicRank())) ignored.add("academicRank已存在");
-        }
-        if (req.getMajorTotal()!=null) {
-            if (u.getMajorTotal()==null) { int t=req.getMajorTotal(); if (t>0) { u.setMajorTotal(t); updates++; } else ignored.add("专业总人数范围"); } else if (!req.getMajorTotal().equals(u.getMajorTotal())) ignored.add("majorTotal已存在");
-        }
+        if (req.getName()!=null && !req.getName().isBlank() && !req.getName().equals(u.getName())) { u.setName(req.getName().trim()); updates++; }
+        if (req.getDepartment()!=null && !req.getDepartment().isBlank() && !req.getDepartment().equals(u.getDepartment())) { u.setDepartment(req.getDepartment().trim()); updates++; }
+        if (req.getMajor()!=null && !req.getMajor().isBlank() && !req.getMajor().equals(u.getMajor())) { u.setMajor(req.getMajor().trim()); updates++; }
+        if (req.getGpa()!=null) { double g=req.getGpa(); if (g>=0 && g<=4) { if(!Objects.equals(u.getGpa(), g)){ u.setGpa(g); updates++; } } else ignored.add("gpa范围"); }
+        if (req.getAcademicRank()!=null) { int r=req.getAcademicRank(); if (r>0) { if(!Objects.equals(u.getAcademicRank(), r)){ u.setAcademicRank(r); updates++; } } else ignored.add("学业排名范围"); }
+        if (req.getMajorTotal()!=null) { int t=req.getMajorTotal(); if (t>0) { if(!Objects.equals(u.getMajorTotal(), t)){ u.setMajorTotal(t); updates++; } } else ignored.add("专业总人数范围"); }
         userRepository.save(u);
         Map<String,Object> body = new HashMap<>();
         body.put("updates", updates);
