@@ -53,9 +53,18 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 预检请求放行
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        // 静态资源：仅允许显式目录与顶层常见文件，移除无效的 /**/*.js 等模式
-                        .requestMatchers("/", "/index.html", "/favicon.ico", "/assets/**").permitAll()
-                        // Actuator health/info for container orchestration probes
+                        // 静态/前端 SPA 构建资源放行（根路径 & 资源目录）
+                        .requestMatchers("/", "/index.html", "/favicon.ico", "/assets/**", "/favicon.png", "/manifest.json").permitAll()
+                        // 显式前端 SPA 路由放行（避免刷新 403）
+                        .requestMatchers(
+                                "/login", "/register",
+                                "/apply", "/apply/**",
+                                "/review", "/review/**",
+                                "/admin", "/admin/**",
+                                "/activities", "/activities/**",
+                                "/applications", "/account", "/settings", "/import"
+                        ).permitAll()
+                        // Actuator health/info for probes
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         // 健康检查接口放行
                         .requestMatchers("/api/health").permitAll()
@@ -71,12 +80,39 @@ public class SecurityConfig {
                         .requestMatchers("/api/applications/submit**").hasAuthority("STUDENT")
                         // 申请接口根据角色细分
                         .requestMatchers("/api/applications/**").hasAnyAuthority("STUDENT", "REVIEWER", "ADMIN")
-                        .anyRequest().authenticated()
+                        // 其它所有 /api/** 仍需认证
+                        .requestMatchers("/api/**").authenticated()
+                        // 剩余所有非 /api/** 的请求（SPA 前端路由）全部放行
+                        .anyRequest().permitAll()
+                )
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            String uri = request.getRequestURI();
+                            if (uri.startsWith("/api/")) {
+                                response.setStatus(401);
+                                response.setContentType("application/json;charset=UTF-8");
+                                response.getWriter().write("{\"code\":401,\"message\":\"未认证\"}");
+                            } else {
+                                response.sendRedirect("/");
+                            }
+                        })
+                        .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            String uri = request.getRequestURI();
+                            if (uri.startsWith("/api/")) {
+                                response.setStatus(403);
+                                response.setContentType("application/json;charset=UTF-8");
+                                response.getWriter().write("{\"code\":403,\"message\":\"无权限\"}");
+                            } else {
+                                // 非 API 路径统一重定向到根目录（交给前端路由处理）
+                                response.sendRedirect("/");
+                            }
+                        })
                 )
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 );
 
+        // 仅让 JWT 过滤器处理（主要目标是 /api/**）。如需进一步精细化可以在过滤器内部根据路径判断。
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
