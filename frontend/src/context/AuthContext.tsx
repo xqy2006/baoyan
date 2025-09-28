@@ -69,16 +69,28 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({children}) 
 
   const fetchWithAuth: AuthContextValue['fetchWithAuth'] = useCallback(async (input, init) => {
     const res = await fetch(input, { ...init, credentials:'include' });
-    if (res.status !== 401 || init?.retry) return res;
-    // 401: 尝试刷新
-    const ok = await refresh();
-    if (ok) {
-      const retryRes = await fetch(input, { ...init, credentials:'include', retry:true });
-      if (retryRes.status !== 401) return retryRes;
+    // 403: 直接提示并重定向（无刷新意义）
+    if(res.status === 403){
+      toast.error('无权限或登录过期');
+      await logout();
+      try { window.location.replace('/'); } catch {}
+      return res;
     }
-    toast.error('登录已过期，请重新登录');
+    // 401: 若非 retry 则尝试 refresh；retry 时直接返回以避免循环
+    if(res.status !== 401 || init?.retry) return res;
+    const ok = await refresh();
+    if(ok){
+      const retryRes = await fetch(input, { ...init, credentials:'include', retry:true });
+      if(retryRes.status === 403){
+        toast.error('无权限访问');
+        await logout();
+        try { window.location.replace('/'); } catch {}
+      }
+      return retryRes;
+    }
+    toast.error('登录状态失效，请重新登录');
     await logout();
-    // 返回原响应以便调用方可按需处理
+    try { window.location.replace('/'); } catch {}
     return res;
   }, [refresh, logout]);
 

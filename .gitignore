@@ -34,3 +34,11 @@ build/
 .vscode/
 
 **/node_modules/
+
+# Environment / secrets (keep sample only)
+.env
+.env.*
+!.env.sample
+
+# Runtime uploads directory (mounted as volume in Docker)
+/uploads/

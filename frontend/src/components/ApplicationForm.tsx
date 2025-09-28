@@ -15,6 +15,7 @@ import { TranscriptUploader } from './TranscriptUploader';
 import { Badge } from './ui/badge';
 import { useLocalTempFile } from './hooks/useLocalTempFile';
 import { ProofFileUploader } from './ProofFileUploader';
+import { ConfirmDialog } from './ui/confirm-dialog';
 
 interface ApplicationFormProps {
   activity: Activity;
@@ -73,6 +74,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
   const [transcriptFile, setTranscriptFile] = useState<any>(null);
   const [autoSaveMsg, setAutoSaveMsg] = useState('');
   const [dirtyCounter, setDirtyCounter] = useState(0);
+  const [revivedFromStatus, setRevivedFromStatus] = useState<string|null>(null);
   const isEditable = (!submittedAt) && (applicationId==null || (status==='DRAFT' || status==='SYSTEM_REVIEWING'));
 
   // 本地文件工具
@@ -130,7 +132,28 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
         setApplicationId(a.id);
         setHasExisting(true);
         setStatus(a.status||'SYSTEM_REVIEWING');
-        setSubmittedAt(a.submittedAt || a.status!== 'DRAFT'? (a.submittedAt||'已提交'): null);
+        // 只有进行中/已通过才标记 submitted; 已取消/驳回允许重新编辑
+        const readonlyStatuses = ['SYSTEM_REVIEWING','SYSTEM_APPROVED','ADMIN_REVIEWING','APPROVED'];
+        if (readonlyStatuses.includes(a.status)) {
+          setSubmittedAt(a.submittedAt || '已提交');
+        } else {
+          setSubmittedAt(null);
+        }
+        // 若已取消或驳回，调用 createDraft 复活为草稿
+        const reopenable = ['CANCELLED','REJECTED','SYSTEM_REJECTED'];
+        if (reopenable.includes(a.status)) {
+          try {
+            const revive = await fetchWithAuth(`/api/applications/draft?activityId=${activity.id}`, { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+            if (revive.ok) {
+              const revived = await revive.json();
+              setApplicationId(revived.id);
+              setStatus('DRAFT');
+              setSubmittedAt(null);
+              setRevivedFromStatus(a.status);
+              toast.info('已从 '+a.status+' 状态恢复为草稿，可重新提交');
+            }
+          } catch {/* ignore revive errors */}
+        }
         if (a.content) {
           try { const json = JSON.parse(a.content);
             if(json.basicInfo) setBasicInfo(b=>({...b, ...json.basicInfo}));
@@ -235,7 +258,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
       setAutoSaveMsg('已本地保存');
     } catch(e:any){ if(!silent) setErrorMsg('本地保存失败'); }
   };
-  const clearLocalDraft = () => { if(window.confirm('确定清除本地草稿?')){ localStorage.removeItem(localDraftKey); toast.success('已清除本地草稿'); } };
+  const clearLocalDraft = () => { setConfirmClearOpen(true); };
 
   // 按 id 上传本地文件（提交或显式保存时使用）
   const ensureRemoteFilesById = async (id:number) => {
@@ -302,17 +325,21 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
   };
 
   // 删除仅适用于已有后端记录（通常已提交不可删除）
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const deleteDraft = async () => {
-    if(!applicationId){ clearLocalDraft(); return; }
-    if(!window.confirm('确定删除此申请记录? 操作不可恢复')) return;
+    if(!applicationId){ setConfirmClearOpen(true); return; }
+    setConfirmDeleteOpen(true);
+  };
+  const doDeleteDraft = async () => {
+    if(!applicationId){ localStorage.removeItem(localDraftKey); toast.success('已清除本地草稿'); return; }
     try {
       const r = await fetchWithAuth(`/api/applications/${applicationId}`, { method:'DELETE' });
       if(!r.ok){ const err = await r.json().catch(()=>({})); toast.error(err.error||'删除失败'); return; }
-      setApplicationId(null);
-      toast.success('已删除');
-      await loadOrCreate();
+      setApplicationId(null); toast.success('已删除'); await loadOrCreate();
     } catch(e:any){ toast.error(e.message); }
   };
+  const doClearLocal = () => { localStorage.removeItem(localDraftKey); toast.success('已清除本地草稿'); };
 
   const validateBeforeSubmit = ():boolean => {
     const errs:string[]=[];
@@ -474,20 +501,30 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
         <Button variant="ghost" size="sm" onClick={onCancel} className="shrink-0"><ArrowLeft className="w-4 h-4" /></Button>
         <h1 className="text-base md:text-lg font-semibold truncate max-w-[40vw] md:max-w-none">推免申请</h1>
         <p className="text-xs md:text-sm text-gray-600 truncate max-w-[30vw] md:max-w-none">{activity.name}</p>
-        <Badge variant={isEditable? 'secondary':'outline'} className="text-[10px] md:text-xs shrink-0">{submittedAt? status : '本地草稿'}</Badge>
+        <Badge variant={isEditable? 'secondary':'outline'} className="text-[10px] md:text-xs shrink-0">{submittedAt? status : (revivedFromStatus? '重新申请草稿':'本地草稿')}</Badge>
         <div className="ml-auto flex items-center gap-2 shrink-0">
           {/* 已移除导出按钮 */}
-          {isEditable && <Button variant="destructive" size="icon" onClick={deleteDraft} title={applicationId? '删除申请记录':'清除本地草稿'}><Trash2 className="w-4 h-4" /><span className="hidden md:inline ml-1">{applicationId? '删除':'清除'}</span></Button>}
+          {isEditable && !applicationId && (
+            <Button
+              variant="destructive"
+              size="icon"
+              onClick={deleteDraft}
+              title="清除本地草稿"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="hidden md:inline ml-1">清除</span>
+            </Button>
+          )}
           {!isEditable && applicationId && <Button variant="outline" size="icon" onClick={fetchBackendScores} title="刷新成绩"><ArrowLeft className="rotate-180 w-4 h-4" /><span className="hidden md:inline ml-1">刷新</span></Button>}
         </div>
       </div>
 
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="p-4 grid grid-cols-4 gap-4 text-center text-xs md:text-sm">
-          <div><p className="text-gray-600">学业(80%)</p><p className="text-sm md:text-lg text-blue-600">{backendScores.academic.toFixed(2)}</p></div>
-          <div><p className="text-gray-600">专长(12%)</p><p className="text-sm md:text-lg text-indigo-600">{backendScores.specWeighted.toFixed(2)}</p></div>
-          <div><p className="text-gray-600">综合(8%)</p><p className="text-sm md:text-lg text-green-600">{backendScores.perfWeighted.toFixed(2)}</p></div>
-          <div><p className="text-gray-600">总分</p><p className="text-sm md:text-lg">{backendScores.total.toFixed(2)}</p></div>
+          <div><p className="text-gray-600">学业(0-80)</p><p className="text-sm md:text-lg text-blue-600">{backendScores.academic.toFixed(2)}</p></div>
+          <div><p className="text-gray-600">学术专长(0-15)</p><p className="text-sm md:text-lg text-indigo-600">{backendScores.specWeighted.toFixed(2)}</p></div>
+          <div><p className="text-gray-600">综合表现(0-5)</p><p className="text-sm md:text-lg text-green-600">{backendScores.perfWeighted.toFixed(2)}</p></div>
+          <div><p className="text-gray-600">总分(0-100)</p><p className="text-sm md:text-lg">{backendScores.total.toFixed(2)}</p></div>
         </CardContent>
       </Card>
 
@@ -521,17 +558,44 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
           {/* 论文发表 (可选) */}
           <Card><CardHeader><CardTitle className="flex items-center justify-between"><span className="flex items-center space-x-2"><BookOpen className="w-5 h-5" /><span>论文发表 (可选)</span></span><Button type="button" size="sm" onClick={()=>{setPublications(p=>[...p,{ title:'', type:'A类', authors:'', authorRank:1, totalAuthors:1, isCoFirst:false, journal:'', publishYear:new Date().getFullYear(), proofFile:null }]); markDirty();}}><Plus className="w-4 h-4" /></Button></CardTitle></CardHeader><CardContent className="space-y-4">{publications.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}{publications.map((pub,i)=> <Card key={i} className="p-4 space-y-3">
             <div className="flex justify-between"><h4 className="text-sm">论文 {i+1}</h4>{publications.length>=1 && <Button type="button" size="sm" variant="destructive" onClick={()=>{setPublications(p=>p.filter((_,x)=>x!==i)); markDirty();}}><Trash2 className="w-3 h-3" />删除</Button>}</div>
-            <Input placeholder="标题 (留空则忽略)" value={pub.title} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,title:e.target.value}:x)); markDirty();}} />
-            <div className="grid grid-cols-2 gap-4"><Select value={pub.type} onValueChange={v=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,type:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="A类">A类</SelectItem><SelectItem value="B类">B类</SelectItem><SelectItem value="C类">C类</SelectItem><SelectItem value="高水平中文">高水平中文</SelectItem><SelectItem value="信息通信工程">信息通信工程</SelectItem></SelectContent></Select><Input type="number" value={pub.publishYear} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,publishYear:+e.target.value}:x)); markDirty();}} /></div>
-            <div className="grid grid-cols-3 gap-4 items-center">
-              <Input type="number" value={pub.authorRank} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,authorRank:+e.target.value}:x)); markDirty();}} placeholder="作者排名" />
-              <Input type="number" value={pub.totalAuthors} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,totalAuthors:+e.target.value}:x)); markDirty();}} placeholder="总作者数" />
+            {/* Publications (论文发表) */}
+            {/* 删除原先的描述行，改为显式标签 */}
+            <Label className="text-xs">论文标题</Label>
+            <Input placeholder="示例: A Study on ..." value={pub.title} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,title:e.target.value}:x)); markDirty();}} />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">类别</Label>
+                <Select value={pub.type} onValueChange={v=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,type:v as any}:x)); markDirty();}}>
+                  <SelectTrigger><SelectValue placeholder="选择类别" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="A类">A类</SelectItem>
+                    <SelectItem value="B类">B类</SelectItem>
+                    <SelectItem value="C类">C类</SelectItem>
+                    <SelectItem value="高水平中文">高水平中文</SelectItem>
+                    <SelectItem value="信息通信工程">信息通信工程</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">发表年份</Label>
+                <Input type="number" value={pub.publishYear} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,publishYear:+e.target.value}:x)); markDirty();}} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4 items-start">
+              <div>
+                <Label className="text-xs">作者排名</Label>
+                <Input type="number" value={pub.authorRank} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,authorRank:+e.target.value}:x)); markDirty();}} />
+              </div>
+              <div>
+                <Label className="text-xs">总作者数</Label>
+                <Input type="number" value={pub.totalAuthors} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,totalAuthors:+e.target.value}:x)); markDirty();}} />
+              </div>
               <div className="flex flex-col gap-1 text-[11px] text-gray-500">
                 <div className="flex items-center space-x-2">
                   <Checkbox checked={pub.isCoFirst} onCheckedChange={v=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,isCoFirst:!!v}:x)); markDirty();}} disabled={!(pub.authorRank===1||pub.authorRank===2)} />
                   <span>共同一作</span>
                 </div>
-                <span>说明: 第一/第二作者且勾选=各 50%</span>
+                <span>说明: 第一/第二作者勾选=各 50%</span>
               </div>
             </div>
             <div><Label>证明材料</Label><ProofFileUploader meta={pub.proofFile as any} applicationId={applicationId} disabled={!isEditable} onChange={(m)=>{ setPublications(list=> list.map((x,idx)=> idx===i? { ...x, proofFile: m as any }: x)); markDirty(); }} /></div>
@@ -540,12 +604,40 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
           {/* 学科竞赛 (可选) */}
           <Card><CardHeader><CardTitle className="flex items-center justify-between"><span className="flex items-center space-x-2"><Trophy className="w-5 h-5" /><span>学科竞赛 (可选)</span></span><Button type="button" size="sm" onClick={()=>{setCompetitions(c=>[...c,{ name:'', level:'A+类', award:'国家级一等奖及以上', year:new Date().getFullYear(), isTeam:false, teamRank:1, totalTeamMembers:1, isExternal:false, workKey:'', proofFile:null }]); markDirty();}}><Plus className="w-4 h-4" /></Button></CardTitle></CardHeader><CardContent className="space-y-4">{competitions.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}{competitions.map((comp,i)=> <Card key={i} className="p-4 space-y-3">
             <div className="flex justify-between"><h4 className="text-sm">竞赛 {i+1}</h4>{competitions.length>=1 && <Button type="button" size="sm" variant="destructive" onClick={()=>{setCompetitions(c=>c.filter((_,x)=>x!==i)); markDirty();}}><Trash2 className="w-3 h-3" />删除</Button>}</div>
-            <Input placeholder="竞赛名称 (留空忽略)" value={comp.name} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,name:e.target.value}:x)); markDirty();}} />
-            <div className="grid grid-cols-2 gap-4"><Select value={comp.level} onValueChange={v=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,level:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="A+类">A+类</SelectItem><SelectItem value="A类">A类</SelectItem><SelectItem value="A-类">A-类</SelectItem></SelectContent></Select><Select value={comp.award} onValueChange={v=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,award:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="国家级一等奖及以上">国家级一等奖及以上</SelectItem><SelectItem value="国家级二等奖">国家级二等奖</SelectItem><SelectItem value="国家级三等奖">国家级三等奖</SelectItem><SelectItem value="省级一等奖及以上">省级一等奖及以上</SelectItem><SelectItem value="省级二等奖">省级二等奖</SelectItem></SelectContent></Select></div>
-            <div className="grid grid-cols-4 gap-4 items-end"><Input type="number" value={comp.year} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,year:+e.target.value}:x)); markDirty();}} placeholder="年份" />
-              <div className="flex items-center space-x-2"><Checkbox checked={comp.isTeam} onCheckedChange={chk=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,isTeam:!!chk}:x)); markDirty();}} /><Label>团体</Label></div>
-              {comp.isTeam && <Input type="number" value={comp.teamRank} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,teamRank:+e.target.value}:x)); markDirty();}} placeholder="团队排名" />}
-              {comp.isTeam && <Input type="number" value={comp.totalTeamMembers} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,totalTeamMembers:+e.target.value}:x)); markDirty();}} placeholder="团队人数" />}
+            {/* Competition (学科竞赛) */}
+            <Label className="text-xs">竞赛名称</Label>
+            <Input placeholder="示例: 蓝桥杯" value={comp.name} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,name:e.target.value}:x)); markDirty();}} />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">级别</Label>
+                <Select value={comp.level} onValueChange={v=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,level:v as any}:x)); markDirty();}}>
+                  <SelectTrigger><SelectValue placeholder="选择级别" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="A+类">A+类</SelectItem>
+                    <SelectItem value="A类">A类</SelectItem>
+                    <SelectItem value="A-类">A-类</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">获奖等级</Label>
+                <Select value={comp.award} onValueChange={v=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,award:v as any}:x)); markDirty();}}>
+                  <SelectTrigger><SelectValue placeholder="选择奖项" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="国家级一等奖及以上">国家级一等奖及以上</SelectItem>
+                    <SelectItem value="国家级二等奖">国家级二等奖</SelectItem>
+                    <SelectItem value="国家级三等奖">国家级三等奖</SelectItem>
+                    <SelectItem value="省级一等奖及以上">省级一等奖及以上</SelectItem>
+                    <SelectItem value="省级二等奖">省级二等奖</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-4 items-end">
+              <div className="col-span-1"><Label className="text-xs">获奖年份</Label><Input type="number" value={comp.year} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,year:+e.target.value}:x)); markDirty();}} /></div>
+              <div className="flex items-center space-x-2 col-span-1 mt-4"><Checkbox checked={comp.isTeam} onCheckedChange={chk=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,isTeam:!!chk}:x)); markDirty();}} /><Label className="text-xs m-0">团体赛</Label></div>
+              {comp.isTeam && <div><Label className="text-xs">团队排名</Label><Input type="number" value={comp.teamRank} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,teamRank:+e.target.value}:x)); markDirty();}} /></div>}
+              {comp.isTeam && <div><Label className="text-xs">团队人数</Label><Input type="number" value={comp.totalTeamMembers} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,totalTeamMembers:+e.target.value}:x)); markDirty();}} /></div>}
             </div>
             {comp.isTeam && <p className="text-[11px] text-gray-500 -mt-2">若为团队赛：填写团队排名与总人数用于折算</p>}
           </Card>)}</CardContent></Card>
@@ -553,27 +645,39 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
           {/* 专利 / 软件著作权 */}
           <Card><CardHeader><CardTitle className="flex items-center justify-between"><span className="flex items-center space-x-2"><BookOpen className="w-5 h-5" /><span>专利 / 软件著作权 (可选)</span></span><Button type="button" size="sm" onClick={()=>{setPatents(p=>[...p,{ title:'', patentNumber:'', authorRank:1, grantYear:new Date().getFullYear(), proofFile:null }]); markDirty();}}><Plus className="w-4 h-4" /></Button></CardTitle></CardHeader><CardContent className="space-y-4">{patents.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}{patents.map((p,i)=> <Card key={i} className="p-4 space-y-3">
             <div className="flex justify-between"><h4 className="text-sm">专利 {i+1}</h4>{patents.length>=1 && <Button size="sm" variant="destructive" type="button" onClick={()=>{setPatents(list=>list.filter((_,x)=>x!==i)); markDirty();}}><Trash2 className="w-3 h-3" />删除</Button>}</div>
-            <Input placeholder="标题/名称 (留空忽略)" value={p.title} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,title:e.target.value}:x)); markDirty();}} />
-            <div className="grid grid-cols-3 gap-4"><Input placeholder="授权号" value={p.patentNumber} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,patentNumber:e.target.value}:x)); markDirty();}} /><Input type="number" value={p.authorRank} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,authorRank:+e.target.value}:x)); markDirty();}} placeholder="作者排名" /><Input type="number" value={p.grantYear} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,grantYear:+e.target.value}:x)); markDirty();}} placeholder="年份" /></div>
+            {/* Patents / Software copyrights */}
+            <Label className="text-xs">名称</Label>
+            <Input placeholder="示例: 一种xxx系统" value={p.title} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,title:e.target.value}:x)); markDirty();}} />
+            <div className="grid grid-cols-3 gap-4">
+              <div><Label className="text-xs">授权号</Label><Input value={p.patentNumber} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,patentNumber:e.target.value}:x)); markDirty();}} /></div>
+              <div><Label className="text-xs">作者排名</Label><Input type="number" value={p.authorRank} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,authorRank:+e.target.value}:x)); markDirty();}} /></div>
+              <div><Label className="text-xs">授权年份</Label><Input type="number" value={p.grantYear} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,grantYear:+e.target.value}:x)); markDirty();}} /></div>
+            </div>
             <div><Label>证明</Label><ProofFileUploader meta={p.proofFile as any} applicationId={applicationId} disabled={!isEditable} onChange={(m)=>{ setPatents(list=> list.map((x,idx)=> idx===i? { ...x, proofFile: m as any }: x)); markDirty(); }} /></div>
           </Card>)}</CardContent></Card>
 
           {/* 创新项目 */}
           <Card><CardHeader><CardTitle className="flex items-center justify-between"><span className="flex items-center space-x-2"><BookOpen className="w-5 h-5" /><span>创新 / 科创项目 (可选)</span></span><Button type="button" size="sm" onClick={()=>{setInnovationProjects(p=>[...p,{ name:'', level:'国家级', role:'组长', status:'已结项', year:new Date().getFullYear(), proofFile:null }]); markDirty();}}><Plus className="w-4 h-4" /></Button></CardTitle></CardHeader><CardContent className="space-y-4">{innovationProjects.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}{innovationProjects.map((p,i)=> <Card key={i} className="p-4 space-y-3">
             <div className="flex justify-between"><h4 className="text-sm">项目 {i+1}</h4>{innovationProjects.length>=1 && <Button size="sm" variant="destructive" type="button" onClick={()=>{setInnovationProjects(list=>list.filter((_,x)=>x!==i)); markDirty();}}><Trash2 className="w-3 h-3" />删除</Button>}</div>
-            <Input placeholder="项目名称 (留空忽略)" value={p.name} onChange={e=>{setInnovationProjects(list=>list.map((x,idx)=>idx===i?{...x,name:e.target.value}:x)); markDirty();}} />
-            <div className="grid grid-cols-3 gap-4"><Select value={p.level} onValueChange={v=>{setInnovationProjects(list=>list.map((x,idx)=>idx===i?{...x,level:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="国家级">国家级</SelectItem><SelectItem value="省级">省级</SelectItem><SelectItem value="校级">校级</SelectItem></SelectContent></Select><Select value={p.role} onValueChange={v=>{setInnovationProjects(list=>list.map((x,idx)=>idx===i?{...x,role:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="组长">组长</SelectItem><SelectItem value="成员">成员</SelectItem></SelectContent></Select><Select value={p.status} onValueChange={v=>{setInnovationProjects(list=>list.map((x,idx)=>idx===i?{...x,status:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="已结项">已结项</SelectItem><SelectItem value="在研">在研</SelectItem></SelectContent></Select></div>
-            <div className="grid grid-cols-2 gap-4"><Input type="number" value={p.year} onChange={e=>{setInnovationProjects(list=>list.map((x,idx)=>idx===i?{...x,year:+e.target.value}:x)); markDirty();}} placeholder="年份" /></div>
+            {/* Innovation / Sci-Tech Project */}
+            <Label className="text-xs">项目名称</Label>
+            <Input placeholder="示例: 智能终端..." value={p.name} onChange={e=>{setInnovationProjects(list=>list.map((x,idx)=>idx===i?{...x,name:e.target.value}:x)); markDirty();}} />
+            <div className="grid grid-cols-3 gap-4">
+              <div><Label className="text-xs">级别</Label><Select value={p.level} onValueChange={v=>{setInnovationProjects(list=>list.map((x,idx)=>idx===i?{...x,level:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue placeholder="级别" /></SelectTrigger><SelectContent><SelectItem value="国家级">国家级</SelectItem><SelectItem value="省级">省级</SelectItem><SelectItem value="校级">校级</SelectItem></SelectContent></Select></div>
+              <div><Label className="text-xs">角色</Label><Select value={p.role} onValueChange={v=>{setInnovationProjects(list=>list.map((x,idx)=>idx===i?{...x,role:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue placeholder="角色" /></SelectTrigger><SelectContent><SelectItem value="组长">组长</SelectItem><SelectItem value="成员">成员</SelectItem></SelectContent></Select></div>
+              <div><Label className="text-xs">状态</Label><Select value={p.status} onValueChange={v=>{setInnovationProjects(list=>list.map((x,idx)=>idx===i?{...x,status:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue placeholder="状态" /></SelectTrigger><SelectContent><SelectItem value="已结项">已结项</SelectItem><SelectItem value="在研">在研</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4"><div><Label className="text-xs">年份</Label><Input type="number" value={p.year} onChange={e=>{setInnovationProjects(list=>list.map((x,idx)=>idx===i?{...x,year:+e.target.value}:x)); markDirty();}} /></div></div>
             <div><Label>证明</Label><ProofFileUploader meta={p.proofFile as any} applicationId={applicationId} disabled={!isEditable} onChange={(m)=>{ setInnovationProjects(list=> list.map((x,idx)=> idx===i? { ...x, proofFile: m as any }: x)); markDirty(); }} /></div>
           </Card>)}</CardContent></Card>
 
           {/* 荣誉称号 */}
           <Card><CardHeader><CardTitle className="flex items-center justify-between"><span className="flex items-center space-x-2"><Award className="w-5 h-5" /><span>荣誉称号 (可选)</span></span><Button type="button" size="sm" onClick={()=>{setHonors(h=>[...h,{ title:'', level:'国家级', year:new Date().getFullYear(), isCollective:false, proofFile:null }]); markDirty();}}><Plus className="w-4 h-4" /></Button></CardTitle></CardHeader><CardContent className="space-y-3">{honors.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}{honors.map((h,i)=> <div key={i} className="grid md:grid-cols-7 grid-cols-3 gap-2 items-end p-3 border rounded">
-            <Input placeholder="名称 (留空忽略)" value={h.title} onChange={e=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,title:e.target.value}:x)); markDirty();}} />
-            <Select value={h.level} onValueChange={v=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,level:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="国家级">国家级</SelectItem><SelectItem value="省级">省级</SelectItem><SelectItem value="校级">校级</SelectItem></SelectContent></Select>
-            <Input type="number" value={h.year} onChange={e=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,year:+e.target.value}:x)); markDirty();}} />
-            <div className="flex items-center gap-2 text-xs"><Checkbox checked={h.isCollective} onCheckedChange={v=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,isCollective:!!v}:x)); markDirty();}} />集体</div>
-            <div className="col-span-2 md:col-span-1"><ProofFileUploader meta={h.proofFile as any} applicationId={applicationId} disabled={!isEditable} onChange={(m)=>{ setHonors(list=> list.map((x,idx)=> idx===i? { ...x, proofFile: m as any }: x)); markDirty(); }} /></div>
+            <div><Label className="text-[11px]">荣誉名称</Label><Input value={h.title} onChange={e=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,title:e.target.value}:x)); markDirty();}} placeholder="如: 三好学生" /></div>
+            <div><Label className="text-[11px]">等级</Label><Select value={h.level} onValueChange={v=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,level:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="国家级">国家级</SelectItem><SelectItem value="省级">省级</SelectItem><SelectItem value="校级">校级</SelectItem></SelectContent></Select></div>
+            <div><Label className="text-[11px]">年份</Label><Input type="number" value={h.year} onChange={e=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,year:+e.target.value}:x)); markDirty();}} /></div>
+            <div className="flex items-center gap-2 mt-5"><Checkbox checked={h.isCollective} onCheckedChange={v=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,isCollective:!!v}:x)); markDirty();}} /><Label className="text-[11px] m-0">集体</Label></div>
+            <div className="col-span-2 md:col-span-1"><Label className="text-[11px]">证明</Label><ProofFileUploader meta={h.proofFile as any} applicationId={applicationId} disabled={!isEditable} onChange={(m)=>{ setHonors(list=> list.map((x,idx)=> idx===i? { ...x, proofFile: m as any }: x)); markDirty(); }} /></div>
             <Button type="button" size="sm" variant="destructive" onClick={()=>{setHonors(s=>s.filter((_,idx)=>idx!==i)); markDirty();}}>删</Button>
             {i===honors.length-1 && <Button type="button" size="sm" onClick={()=>{setHonors(s=>[...s,{ title:'', level:'国家级', year:new Date().getFullYear(), isCollective:false, proofFile:null }]);}}>+</Button>}
           </div>)}</CardContent></Card>
@@ -581,12 +685,13 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
           {/* 体育比赛 */}
           <Card><CardHeader><CardTitle className="flex items-center space-x-2"><Trophy className="w-5 h-5" /><span>体育比赛 (可选)</span></CardTitle></CardHeader><CardContent className="space-y-3">{sports.length===0 && <div className="text-xs text-gray-500">暂无记录，点击下方添加</div>}{sports.map((sp,i)=> <Card key={sp.id} className="p-4 space-y-3">
             <div className="flex justify-between items-center"><h4 className="text-sm">赛事 {i+1}</h4><Button type="button" size="sm" variant="destructive" onClick={()=>{setSports(list=>list.filter(x=>x.id!==sp.id)); markDirty();}}>删</Button></div>
-            <Input placeholder="赛事名称 (留空忽略)" value={sp.name} onChange={e=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,name:e.target.value}:x)); markDirty();}} />
+            <Label className="text-xs">赛事名称</Label>
+            <Input placeholder="示例: 全国大学生田径锦标赛" value={sp.name} onChange={e=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,name:e.target.value}:x)); markDirty();}} />
             <div className="grid md:grid-cols-5 grid-cols-2 gap-3 items-end text-xs">
-              <Select value={sp.scope} onValueChange={v=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,scope:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="国际级">国际级</SelectItem><SelectItem value="国家级">国家级</SelectItem></SelectContent></Select>
-              <Select value={sp.result} onValueChange={v=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,result:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="冠军">冠军</SelectItem><SelectItem value="亚军">亚军</SelectItem><SelectItem value="季军">季军</SelectItem><SelectItem value="四至八名">四至八名</SelectItem></SelectContent></Select>
-              <div className="flex items-center gap-2"><Checkbox checked={sp.isTeam} onCheckedChange={v=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,isTeam:!!v}:x)); markDirty();}} />团队</div>
-              {sp.isTeam && <Input type="number" min={1} value={sp.teamSize} onChange={e=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,teamSize:+e.target.value}:x)); markDirty();}} placeholder="人数" />}
+              <div><Label>级别</Label><Select value={sp.scope} onValueChange={v=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,scope:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="国际级">国际级</SelectItem><SelectItem value="国家级">国家级</SelectItem></SelectContent></Select></div>
+              <div><Label>成绩</Label><Select value={sp.result} onValueChange={v=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,result:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="冠军">冠军</SelectItem><SelectItem value="亚军">亚军</SelectItem><SelectItem value="季军">季军</SelectItem><SelectItem value="四至八名">四至八名</SelectItem></SelectContent></Select></div>
+              <div className="flex items-center gap-2 mt-5"><Checkbox checked={sp.isTeam} onCheckedChange={v=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,isTeam:!!v}:x)); markDirty();}} />团队</div>
+              {sp.isTeam && <div><Label>团队人数</Label><Input type="number" min={1} value={sp.teamSize} onChange={e=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,teamSize:+e.target.value}:x)); markDirty();}} /></div>}
               {!sp.isTeam && <div className="text-gray-500">个人赛</div>}
             </div>
           </Card>)}
@@ -621,6 +726,9 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
           {errorMsg && <span className="text-red-600 whitespace-pre-line">{errorMsg}</span>}
         </div>
       </form>
+
+      <ConfirmDialog open={confirmClearOpen} onOpenChange={o=> setConfirmClearOpen(o)} title="清除本地草稿" description="此操作仅移除浏览器本地未提交草稿，确定继续？" confirmText="清除" destructive onConfirm={doClearLocal} />
+      <ConfirmDialog open={confirmDeleteOpen} onOpenChange={o=> setConfirmDeleteOpen(o)} title="删除申请记录" description="删除后不可恢复，建议改用取消功能。仍要继续？" confirmText="删除" destructive onConfirm={doDeleteDraft} />
     </div>
   );
 };

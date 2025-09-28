@@ -80,8 +80,14 @@ public class FileController {
         return fileService.find(id).map(meta -> {
             try {
                 byte[] data = fileService.read(meta);
+                String filename = meta.getOriginalFilename() == null ? "file" : meta.getOriginalFilename();
+                // 清理潜在的无效字符 (换行、引号等)
+                filename = filename.replaceAll("[\r\n]", " ").replace("\"", "'");
+                String encoded = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+","%20");
+                String asciiFallback = filename.chars().allMatch(c -> c <= 127 && c > 31) ? filename : "file";
+                String contentDisposition = "inline; filename=\"" + asciiFallback + "\"; filename*=UTF-8''" + encoded;
                 return ResponseEntity.ok()
-                        .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\""+meta.getOriginalFilename()+"\"")
+                        .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
                         .contentType(MediaType.parseMediaType(meta.getContentType()==null?"application/octet-stream":meta.getContentType()))
                         .contentLength(data.length)
                         .body(new ByteArrayResource(data));

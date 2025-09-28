@@ -96,8 +96,8 @@ public class ApplicationController {
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('STUDENT','ADMIN')")
     public ResponseEntity<?> deleteApplication(@PathVariable Long id) {
-        try { applicationService.deleteOwnedOrAdmin(id); return ResponseEntity.noContent().build(); }
-        catch (Exception e){ return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
+        // 删除功能已禁用，提示使用取消
+        return ResponseEntity.badRequest().body(Map.of("error","删除功能已禁用，请使用取消接口 /api/applications/"+id+"/cancel"));
     }
 
     @PreAuthorize("hasAnyAuthority('STUDENT','ADMIN')")
@@ -136,14 +136,14 @@ public class ApplicationController {
         } catch (Exception e){ return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
     }
 
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN','REVIEWER')")
     @PostMapping("/{id}/system-review")
     public ResponseEntity<?> systemReview(@PathVariable Long id){
         try { return ResponseEntity.ok(applicationService.systemReview(id)); }
         catch (Exception e){ return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
     }
 
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN','REVIEWER')")
     @PostMapping("/{id}/admin-start")
     public ResponseEntity<?> startAdminReview(@PathVariable Long id){
         try { return ResponseEntity.ok(applicationService.startAdminReview(id)); }
@@ -151,8 +151,9 @@ public class ApplicationController {
     }
 
     public record AdminDecision(boolean approve, String comment){}
+    public record ReopenRequest(String reason){}
 
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN','REVIEWER')")
     @PostMapping("/{id}/admin-review")
     public ResponseEntity<?> adminReview(@PathVariable Long id, @RequestBody AdminDecision decision){
         try { return ResponseEntity.ok(applicationService.adminReview(id, decision.approve(), decision.comment())); }
@@ -205,5 +206,19 @@ public class ApplicationController {
                 "finalApproved", finalAppr,
                 "finalRejected", finalRej
         );
+    }
+
+    @PreAuthorize("hasAnyAuthority('STUDENT','ADMIN')")
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<?> cancel(@PathVariable Long id){
+        try { return ResponseEntity.ok(applicationService.cancel(id)); }
+        catch (Exception e){ return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
+    }
+
+    @PreAuthorize("hasAnyAuthority('ADMIN','REVIEWER')")
+    @PostMapping("/{id}/admin-reopen")
+    public ResponseEntity<?> reopen(@PathVariable Long id, @RequestBody(required = false) ReopenRequest body){
+        try { return ResponseEntity.ok(applicationService.reopenAdminReview(id, body==null? null: body.reason())); }
+        catch (Exception e){ return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
     }
 }

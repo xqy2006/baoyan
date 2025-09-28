@@ -24,13 +24,13 @@ export interface Activity { id:string; name:string; department:string; type:any;
 export interface Application {
   id: string;
   activityName: string;
-  status: 'pending'|'system_reviewing'|'system_approved'|'system_rejected'|'admin_reviewing'|'approved'|'rejected';
+  status: 'pending'|'system_reviewing'|'system_approved'|'system_rejected'|'admin_reviewing'|'approved'|'rejected'|'cancelled';
   basicInfo: any;
   languageScores: any;
   academicAchievements: { publications:any[]; patents:any[]; competitions:any[]; innovationProjects:any[]; totalAcademicScore:number; };
   comprehensivePerformance: { volunteerService:any; socialWork:any[]; honors:any[]; sports?:any[]; internship?:string; militaryYears?:number; totalPerformanceScore:number; };
   calculatedScores: { academicScore:number; academicAchievementScore?:number; performanceScore:number; totalScore:number; };
-  calculatedRaw?: { specRaw:number; perfRaw:number };
+  calculatedRaw?: { specRaw:number; perfRaw:number; academicConvertedScore?:number; academicRankScore?:number; academicGpaScore?:number; academicBaseUsed?:number; internshipScore?:number; militaryScore?:number };
   personalStatement: string;
   uploadedFiles: { languageCertificates:any[]; academicDocuments:any[]; transcripts:any[]; recommendationLetters?:any[]; };
   specialAcademicTalent?: { isApplying:boolean; description?:string; achievements?:string; defensePassed?:boolean; professors?:Array<{name:string; title?:string; department?:string}> };
@@ -146,7 +146,11 @@ const ReviewPage: React.FC = () => {
       if(!res.ok) throw new Error('加载失败');
       const data = await res.json();
       const content = data.content? JSON.parse(data.content):{};
-      const mapStatus: Record<string, Application['status']> = { DRAFT:'pending', SYSTEM_REVIEWING:'system_reviewing', SYSTEM_APPROVED:'system_approved', SYSTEM_REJECTED:'system_rejected', ADMIN_REVIEWING:'admin_reviewing', APPROVED:'approved', REJECTED:'rejected' };
+      const mapStatus: Record<string, Application['status']> = { DRAFT:'pending', SYSTEM_REVIEWING:'system_reviewing', SYSTEM_APPROVED:'system_approved', SYSTEM_REJECTED:'system_rejected', ADMIN_REVIEWING:'admin_reviewing', APPROVED:'approved', REJECTED:'rejected', CANCELLED:'cancelled' };
+      const academicScore = (typeof data.academicScore === 'number')? data.academicScore : (content.calculatedScores?.academicScore||0);
+      const achievementScore = (typeof data.achievementScore === 'number')? data.achievementScore : (content.calculatedScores?.academicAchievementScore||0);
+      const performanceScore = (typeof data.performanceScore === 'number')? data.performanceScore : (content.calculatedScores?.performanceScore||0);
+      const totalScore = (typeof data.totalScore === 'number')? data.totalScore : (content.calculatedScores?.totalScore|| (academicScore + achievementScore + performanceScore));
       setApplication({
         id: String(data.id),
         activityName: data.activityName || '活动',
@@ -155,7 +159,7 @@ const ReviewPage: React.FC = () => {
         languageScores: content.languageScores || {},
         academicAchievements: content.academicAchievements || { publications:[], patents:[], competitions:[], innovationProjects:[], totalAcademicScore:0 },
         comprehensivePerformance: content.comprehensivePerformance || { volunteerService:{hours:0,totalScore:0}, socialWork:[], honors:[], totalPerformanceScore:0 },
-        calculatedScores: content.calculatedScores || { academicScore:0, performanceScore:0, totalScore:0 },
+        calculatedScores: { academicScore, academicAchievementScore:achievementScore, performanceScore, totalScore },
         calculatedRaw: content.calculatedRaw,
         personalStatement: content.personalStatement || '',
         uploadedFiles: content.uploadedFiles || { languageCertificates:[], academicDocuments:[], transcripts:[], recommendationLetters:[] },

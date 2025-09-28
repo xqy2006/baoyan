@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Plus, Edit3, Trash2, Calendar, Users, Settings } from 'lucide-react';
 import { Activity } from '../App';
+import { toast } from 'sonner';
+import { ConfirmDialog } from './ui/confirm-dialog';
 
 export const ActivityManagement: React.FC = () => {
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -18,6 +20,7 @@ export const ActivityManagement: React.FC = () => {
   const [error, setError] = useState('');
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string|null>(null);
 
   const loadActivities = async () => {
     setLoading(true); setError('');
@@ -66,16 +69,22 @@ export const ActivityManagement: React.FC = () => {
     try {
       await saveToBackend(activity, !activity.id);
       setIsDialogOpen(false); setEditingActivity(null); await loadActivities();
-    } catch (e:any) { alert(e.message); }
+      toast.success('保存成功');
+    } catch (e:any) { toast.error(e.message||'保存失败'); }
   };
 
   const handleDeleteActivity = async (activityId: string) => {
-    if (!window.confirm('确认删除该活动?')) return;
+    setConfirmDeleteId(activityId);
+  };
+  const doDeleteActivity = async () => {
+    if(!confirmDeleteId) return;
     try {
-      const res = await fetch(`/api/activities/${activityId}`, { method:'DELETE', credentials:'include' });
+      const res = await fetch(`/api/activities/${confirmDeleteId}`, { method:'DELETE', credentials:'include' });
       if (!res.ok) throw new Error('删除失败');
+      toast.success('已删除');
       await loadActivities();
-    } catch (e:any) { alert(e.message); }
+    } catch (e:any) { toast.error(e.message||'删除失败'); }
+    finally { setConfirmDeleteId(null); }
   };
 
   const handleToggleActivity = async (activityId: string) => {
@@ -83,7 +92,7 @@ export const ActivityManagement: React.FC = () => {
       const res = await fetch(`/api/activities/${activityId}/toggle`, { method:'POST', credentials:'include' });
       if (!res.ok) throw new Error('切换失败');
       await loadActivities();
-    } catch (e:any) { alert(e.message); }
+    } catch (e:any) { toast.error(e.message||'切换失败'); }
   };
 
   const getStatusBadge = (activity: Activity) => {
@@ -340,6 +349,8 @@ export const ActivityManagement: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog open={!!confirmDeleteId} onOpenChange={o=>{ if(!o) setConfirmDeleteId(null); }} title="确认删除活动" description={`删除后不可恢复，确定删除该活动? (${confirmDeleteId||''})`} confirmText="删除" destructive onConfirm={doDeleteActivity} />
     </div>
   );
 };

@@ -33,6 +33,8 @@ public class ApplicationService {
     private ActivityRepository activityRepository;
     @Autowired
     private UserRepository userRepository;
+    @Autowired
+    private FileService fileService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -46,7 +48,20 @@ public class ApplicationService {
     public Application createDraft(Long activityId, String content) {
         User user = currentUserEntity();
         Optional<Application> existing = applicationRepository.findByUser_IdAndActivity_Id(user.getId(), activityId);
-        if (existing.isPresent()) return existing.get();
+        if (existing.isPresent()) {
+            Application ex = existing.get();
+            if (ex.getStatus()==ApplicationStatus.CANCELLED || ex.getStatus()==ApplicationStatus.REJECTED || ex.getStatus()==ApplicationStatus.SYSTEM_REJECTED) {
+                // 重新激活为草稿
+                ex.setStatus(ApplicationStatus.DRAFT);
+                ex.setSubmittedAt(null);
+                ex.setSystemReviewedAt(null);
+                ex.setAdminReviewedAt(null);
+                ex.setSystemReviewComment(null);
+                ex.setAdminReviewComment(null);
+                return applicationRepository.save(ex);
+            }
+            return ex;
+        }
         Activity activity = activityRepository.findById(activityId)
                 .orElseThrow(() -> new IllegalArgumentException("活动不存在"));
         Application app = new Application();
@@ -114,18 +129,21 @@ public class ApplicationService {
             try { app.setContent(MAPPER.writeValueAsString(o)); } catch(Exception ignored){}
         }
         recalcScores(app);
-        app.setStatus(ApplicationStatus.SYSTEM_REVIEWING);
+        // 直接视为系统审核通过
+        app.setStatus(ApplicationStatus.SYSTEM_APPROVED);
         app.setSubmittedAt(LocalDateTime.now());
+        app.setSystemReviewedAt(LocalDateTime.now());
+        app.setSystemReviewComment(null); // 置空
         return applicationRepository.save(app);
     }
 
     public Application systemReview(Long id) {
+        ensureAdminOrReviewer();
         Application app = applicationRepository.findById(id).orElseThrow();
         if (app.getStatus() != ApplicationStatus.SYSTEM_REVIEWING) {
             throw new IllegalStateException("非系统审核中");
         }
         recalcScores(app); // compute scores from content (academic based on GPA/rank)
-        // 简单规则: academicScore(0-80) >= 48 (即 60%*80) 通过
         double academic = app.getAcademicScore()==null?0: app.getAcademicScore();
         if (academic >= 48) {
             app.setStatus(ApplicationStatus.SYSTEM_APPROVED);
@@ -139,6 +157,7 @@ public class ApplicationService {
     }
 
     public Application startAdminReview(Long id) {
+        ensureAdminOrReviewer();
         Application app = applicationRepository.findById(id).orElseThrow();
         if (app.getStatus() != ApplicationStatus.SYSTEM_APPROVED) {
             throw new IllegalStateException("必须是系统通过状态");
@@ -148,9 +167,13 @@ public class ApplicationService {
     }
 
     public Application adminReview(Long id, boolean approve, String comment) {
+        ensureAdminOrReviewer();
         Application app = applicationRepository.findById(id).orElseThrow();
         if (app.getStatus() != ApplicationStatus.ADMIN_REVIEWING) {
             throw new IllegalStateException("非人工审核中");
+        }
+        if(!approve && (comment==null || comment.isBlank())){
+            throw new IllegalStateException("拒绝操作必须填写审核意见");
         }
         recalcScores(app); // ensure latest scores
         app.setStatus(approve ? ApplicationStatus.APPROVED : ApplicationStatus.REJECTED);
@@ -160,11 +183,13 @@ public class ApplicationService {
     }
 
     public List<Application> reviewQueue() {
-        // 审核队列：系统审核中 + 待人工开始(SYSTEM_APPROVED) + 人工审核中
+        // 审核队列：包含所有待/在审核及已出管理员结论（允许复核）
         return applicationRepository.findByStatusIn(List.of(
                 ApplicationStatus.SYSTEM_REVIEWING,
                 ApplicationStatus.SYSTEM_APPROVED,
-                ApplicationStatus.ADMIN_REVIEWING
+                ApplicationStatus.ADMIN_REVIEWING,
+                ApplicationStatus.APPROVED,
+                ApplicationStatus.REJECTED
         ));
     }
 
@@ -204,6 +229,7 @@ public class ApplicationService {
             PDPage page = new PDPage(PDRectangle.A4);
             doc.addPage(page);
             PDType0Font font0 = null; boolean fontLoaded=false;
+            // 1) 尝试加载资源目录内字体（建议放置 NotoSansSC-Regular.ttf 或 DejaVuSans.ttf 于 resources/fonts）
             try(InputStream is = getClass().getResourceAsStream("/fonts/NotoSansSC-Regular.ttf")){
                 if(is!=null){ font0 = PDType0Font.load(doc, is, true); fontLoaded=true; }
             } catch(Exception ignore){}
@@ -211,6 +237,19 @@ public class ApplicationService {
                 try(InputStream is = ApplicationService.class.getResourceAsStream("/fonts/DejaVuSans.ttf")){
                     if(is!=null){ font0 = PDType0Font.load(doc, is, true); fontLoaded=true; }
                 } catch(Exception ignore){}
+            }
+            // 2) 尝试系统字体（Windows / Linux 常用中文字体）
+            if(!fontLoaded){
+                String[] candidates = new String[]{
+                        "C:/Windows/Fonts/msyh.ttc","C:/Windows/Fonts/msyh.ttf","C:/Windows/Fonts/msyhbd.ttc","C:/Windows/Fonts/simsun.ttc","C:/Windows/Fonts/simhei.ttf",
+                        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc","/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc","/usr/share/fonts/truetype/arphic/ukai.ttc"
+                };
+                for(String path: candidates){
+                    try(java.io.FileInputStream fis = new java.io.FileInputStream(path)){
+                        font0 = PDType0Font.load(doc, fis, true); fontLoaded=true; break;
+                    } catch(Exception ignore){}
+                }
             }
             PDPageContentStream cs = new PDPageContentStream(doc, page);
             float margin = 40; float y = page.getMediaBox().getHeight() - 50; float lh = 16; float width = page.getMediaBox().getWidth() - margin*2;
@@ -220,19 +259,146 @@ public class ApplicationService {
             line(cs,font0,12,String.format("系别: %s 专业: %s", basic.path("department").asText("-"), basic.path("major").asText("-")), margin,y); y-=lh;
             line(cs,font0,12,String.format("GPA: %s 排名: %s/%s", basic.path("gpa").asText(""), basic.path("academicRanking").asText(""), basic.path("totalStudents").asText("")), margin,y); y-=lh*1.5;
             y = section(cs,font0,"个人陈述", root.path("personalStatement").asText("(未填写)"), margin,y,lh,width);
-            y = listSection(cs,font0,"论文发表", root.path("academicAchievements").path("publications"), margin,y,lh,width,(p,i)-> String.format("%d. %s / %s / 作者 %d/%d%s", i+1,opt(p,"title"),opt(p,"type"),p.path("authorRank").asInt(0),p.path("totalAuthors").asInt(0),p.path("isCoFirst").asBoolean(false)?" (共同一作)":""));
-            y = listSection(cs,font0,"学科竞赛", root.path("academicAchievements").path("competitions"), margin,y,lh,width,(c,i)-> String.format("%d. %s / %s / %s%s", i+1,opt(c,"name"),opt(c,"level"),opt(c,"award"), c.path("isTeam").asBoolean(false)? String.format(" 团队(%d/%d)",c.path("teamRank").asInt(0),c.path("totalTeamMembers").asInt(0)):""));
-            y = listSection(cs,font0,"专利/软著", root.path("academicAchievements").path("patents"), margin,y,lh,width,(p,i)-> String.format("%d. %s / %s / 排名%d", i+1,opt(p,"title"),opt(p,"patentNumber"),p.path("authorRank").asInt(0)));
-            y = listSection(cs,font0,"科创项目", root.path("academicAchievements").path("innovationProjects"), margin,y,lh,width,(p,i)-> String.format("%d. %s / %s / %s / %s", i+1,opt(p,"name"),opt(p,"level"),opt(p,"role"),opt(p,"status")));
-            y = listSection(cs,font0,"荣誉称号", root.path("comprehensivePerformance").path("honors"), margin,y,lh,width,(p,i)-> String.format("%d. %s / %s / %s%s", i+1,opt(p,"title"),opt(p,"level"),opt(p,"year"), p.path("isCollective").asBoolean(false)?" 集体":""));
+
+            // ==== 重写：使用可变上下文对象避免 lambda 修改局部变量导致的编译错误 ====
+            JsonNode uploaded = root.path("uploadedFiles");
+            JsonNode pubProofs = uploaded.path("publicationProofs");
+            JsonNode compProofs = uploaded.path("competitionProofs");
+            JsonNode patentProofs = uploaded.path("patentProofs");
+            JsonNode honorProofs = uploaded.path("honorProofs");
+            JsonNode innovProofs = uploaded.path("innovationProofs");
+
+            final float bottom = 60f;
+            // 上下文
+            class PdfCtx { PDPage pageRef; PDPageContentStream csRef; float yRef; }
+            final PdfCtx ctx = new PdfCtx();
+            ctx.pageRef = page; ctx.csRef = cs; ctx.yRef = y;
+            final PDType0Font fFinal = font0; final boolean fontLoadedFinal = fontLoaded; // 供 lambda 捕获
+
+            java.util.function.Consumer<Float> ensureSpace = (need) -> {
+                try {
+                    if (ctx.yRef - need < bottom) {
+                        ctx.csRef.close();
+                        ctx.pageRef = new PDPage(PDRectangle.A4);
+                        doc.addPage(ctx.pageRef);
+                        ctx.csRef = new PDPageContentStream(doc, ctx.pageRef);
+                        if (fontLoadedFinal && fFinal!=null) ctx.csRef.setFont(fFinal, 12); else ctx.csRef.setFont(PDType1Font.HELVETICA, 12);
+                        ctx.yRef = ctx.pageRef.getMediaBox().getHeight() - 50;
+                    }
+                } catch (Exception ignored) {}
+            };
+
+            java.util.function.Consumer<String> writeSectionTitle = (title) -> {
+                try { ensureSpace.accept(30f); ctx.yRef = writeWrap(ctx.csRef, fFinal, 12, "【"+title+"】", margin, ctx.yRef, lh, width); } catch(Exception ignored){}
+            };
+
+            java.util.function.BiFunction<JsonNode, JsonNode, java.util.List<JsonNode>> matchProofs = (item, proofs) -> {
+                java.util.List<JsonNode> list = new java.util.ArrayList<>();
+                if (proofs==null || !proofs.isArray() || proofs.size()==0 || item==null) return list;
+                if (item.has("proofFileIds") && item.get("proofFileIds").isArray()) {
+                    for (JsonNode idNode: item.get("proofFileIds")) {
+                        long fid = idNode.asLong(-1);
+                        for (JsonNode p: proofs) { if (p.path("id").asLong(-2)==fid) { list.add(p); break; } }
+                    }
+                } else if (item.has("proofFileId")) {
+                    long fid = item.get("proofFileId").asLong(-1);
+                    for (JsonNode p: proofs) { if (p.path("id").asLong(-2)==fid) { list.add(p); break; } }
+                }
+                return list;
+            };
+
+            java.util.function.BiFunction<Integer, JsonNode, JsonNode> fallbackByIndex = (idx, proofs) -> {
+                if (proofs!=null && proofs.isArray() && proofs.size()>idx) return proofs.get(idx); return null; };
+
+            java.util.function.BiFunction<byte[], String, Float> drawImage = (bytes, caption) -> {
+                try {
+                    org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject img = org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject.createFromByteArray(doc, bytes, caption);
+                    float maxW = width;
+                    float imgW = img.getWidth();
+                    float imgH = img.getHeight();
+                    float scale = Math.min(1f, maxW / imgW);
+                    float drawW = imgW * scale;
+                    float drawH = imgH * scale;
+                    ensureSpace.accept(drawH + 40);
+                    ctx.yRef = writeWrap(ctx.csRef, fFinal, 10, caption, margin, ctx.yRef, 12, width) - 4;
+                    ctx.csRef.drawImage(img, margin, ctx.yRef - drawH, drawW, drawH);
+                    ctx.yRef -= (drawH + 14);
+                } catch (Exception ex) {
+                    try { ctx.yRef = writeWrap(ctx.csRef, fFinal, 10, caption + " (图片加载失败)", margin, ctx.yRef, 12, width) - 4; } catch (Exception ignore) {}
+                }
+                return ctx.yRef;
+            };
+
+            java.util.function.BiConsumer<String, JsonNode> outputArray = (title, arr) -> {
+                if (arr==null || !arr.isArray() || arr.size()==0) return;
+                writeSectionTitle.accept(title);
+                for (int i=0;i<arr.size();i++) {
+                    JsonNode node = arr.get(i);
+                    ensureSpace.accept(40f);
+                    String lineTxt;
+                    switch (title) {
+                        case "论文发表":
+                            lineTxt = String.format("%d. %s / %s / 作者 %d/%d%s", i+1, opt(node,"title"), opt(node,"type"), node.path("authorRank").asInt(0), node.path("totalAuthors").asInt(0), node.path("isCoFirst").asBoolean(false)?" (共同一作)":"");
+                            break;
+                        case "学科竞赛":
+                            lineTxt = String.format("%d. %s / %s / %s%s", i+1,opt(node,"name"),opt(node,"level"),opt(node,"award"), node.path("isTeam").asBoolean(false)? String.format(" 团队(%d/%d)",node.path("teamRank").asInt(0),node.path("totalTeamMembers").asInt(0)):"");
+                            break;
+                        case "专利/软著":
+                            lineTxt = String.format("%d. %s / %s / 排名%d", i+1,opt(node,"title"),opt(node,"patentNumber"), node.path("authorRank").asInt(0));
+                            break;
+                        case "科创项目":
+                            lineTxt = String.format("%d. %s / %s / %s / %s", i+1,opt(node,"name"),opt(node,"level"),opt(node,"role"),opt(node,"status"));
+                            break;
+                        case "荣誉称号":
+                            lineTxt = String.format("%d. %s / %s / %s%s", i+1,opt(node,"title"),opt(node,"level"),opt(node,"year"), node.path("isCollective").asBoolean(false)?" 集体":"");
+                            break;
+                        default:
+                            lineTxt = (i+1)+". "+ node.toString();
+                    }
+                    try { ctx.yRef = writeWrap(ctx.csRef, fFinal, 11, lineTxt, margin, ctx.yRef, 14, width); } catch (Exception ignored) {}
+                    JsonNode proofsSet = switch (title) {
+                        case "论文发表" -> pubProofs;
+                        case "学科竞赛" -> compProofs;
+                        case "专利/软著" -> patentProofs;
+                        case "科创项目" -> innovProofs;
+                        case "荣誉称号" -> honorProofs;
+                        default -> null;
+                    };
+                    java.util.List<JsonNode> matched = matchProofs.apply(node, proofsSet);
+                    if (matched.isEmpty() && proofsSet!=null && proofsSet.isArray() && proofsSet.size()==arr.size()) {
+                        JsonNode fb = fallbackByIndex.apply(i, proofsSet);
+                        if (fb!=null) matched = java.util.List.of(fb);
+                    }
+                    for (JsonNode pf : matched) {
+                        long fid = pf.path("id").asLong(-1);
+                        if (fid > 0) {
+                            fileService.find(fid).ifPresent(meta -> {
+                                try { byte[] bytes = fileService.read(meta); drawImage.apply(bytes, "  证明: " + meta.getOriginalFilename()); } catch (Exception ignored) {}
+                            });
+                        }
+                    }
+                }
+            };
+
+            JsonNode acad = root.path("academicAchievements");
+            outputArray.accept("论文发表", acad.path("publications"));
+            outputArray.accept("学科竞赛", acad.path("competitions"));
+            outputArray.accept("专利/软著", acad.path("patents"));
+            outputArray.accept("科创项目", acad.path("innovationProjects"));
+            outputArray.accept("荣誉称号", root.path("comprehensivePerformance").path("honors"));
+
+            // 同步回局部变量供后续旧逻辑复用
+            cs = ctx.csRef; page = ctx.pageRef; y = ctx.yRef;
+
+            // 继续其它部分（社会工作 / 志愿 / 体育 / 特殊学术专长）
             y = listSection(cs,font0,"社会工作", root.path("comprehensivePerformance").path("socialWork"), margin,y,lh,width,(p,i)-> String.format("%d. %s / %s / %s / 评分%s", i+1,opt(p,"position"),opt(p,"level"),opt(p,"year"),opt(p,"rating")));
             JsonNode vs = root.path("comprehensivePerformance").path("volunteerService");
             y = section(cs,font0,"志愿服务", String.format("总时长: %s 小时; 分段: %d", vs.path("hours").asText(""), vs.path("segments").isArray()? vs.path("segments").size():0), margin,y,lh,width);
             y = listSection(cs,font0,"体育比赛", root.path("comprehensivePerformance").path("sports"), margin,y,lh,width,(p,i)-> String.format("%d. %s / %s / %s%s", i+1,opt(p,"name"),opt(p,"scope"),opt(p,"result"), p.path("isTeam").asBoolean(false)?" 团队":""));
             JsonNode talent = root.path("specialAcademicTalent"); if(talent.path("isApplying").asBoolean(false)){ y = section(cs,font0,"特殊学术专长申请", "简介:"+talent.path("description").asText("(未填)")+"\n成果:"+talent.path("achievements").asText("(未填)"), margin,y,lh,width); }
-            if(y<60){ cs.close(); page = new PDPage(PDRectangle.A4); doc.addPage(page); cs = new PDPageContentStream(doc,page); y= page.getMediaBox().getHeight()-50; }
+            if(y<60){ cs.close(); page = new PDPage(PDRectangle.A4); doc.addPage(page); cs = new PDPageContentStream(doc,page); y= page.getMediaBox().getHeight()-50; if(fontLoaded) cs.setFont(font0,12); else cs.setFont(PDType1Font.HELVETICA,12); }
             y-=lh;
-            line(cs,font0,10,String.format("学业: %.2f 专长(加权): %.2f 综合(加权): %.2f 总分: %.2f", nz(app.getAcademicScore()), nz(app.getAchievementScore()), nz(app.getPerformanceScore()), nz(app.getTotalScore())), margin,y);
+            line(cs,font0,10,String.format("学业: %.2f 学术专长: %.2f 综合表现: %.2f 总分: %.2f", nz(app.getAcademicScore()), nz(app.getAchievementScore()), nz(app.getPerformanceScore()), nz(app.getTotalScore())), margin,y);
             cs.close(); doc.save(bos); return bos.toByteArray();
         } catch(Exception e){ throw new RuntimeException("生成PDF失败: "+e.getMessage(), e);} }
 
@@ -263,10 +429,24 @@ public class ApplicationService {
     }
 
     private void recalcScores(Application app){
-        double academicBase = computeAcademicBaseFromApp(app); // updated fallback
+        double academicBase = computeAcademicBaseFromApp(app); // 0-80
         double specRaw = 0; double perfRaw = 0; boolean defensePassed = false;
+        Double rankScoreDetail=null,gpaScoreDetail=null,convertedDetail=null;
         try {
             JsonNode root = app.getContent()==null? MAPPER.createObjectNode(): MAPPER.readTree(app.getContent());
+            JsonNode basicInfo = root.path("basicInfo");
+            if(basicInfo.hasNonNull("convertedScore")) convertedDetail = basicInfo.path("convertedScore").asDouble();
+            else if(basicInfo.hasNonNull("percentageScore")) convertedDetail = basicInfo.path("percentageScore").asDouble();
+            else if(basicInfo.hasNonNull("averageScore100")) convertedDetail = basicInfo.path("averageScore100").asDouble();
+            if(convertedDetail==null){
+                // derive rank & GPA components for detail (duplicate of computeAcademicBaseFromApp logic for transparency)
+                Double gpa=null; Integer rank=null,total=null;
+                if(basicInfo.hasNonNull("gpa")) gpa = basicInfo.path("gpa").asDouble();
+                if(basicInfo.hasNonNull("academicRanking")) rank = basicInfo.path("academicRanking").asInt();
+                if(basicInfo.hasNonNull("totalStudents")) total = basicInfo.path("totalStudents").asInt();
+                if(rank!=null && total!=null && total>0){ rankScoreDetail = ((double)(total - rank +1)/ total)*80.0; }
+                if(gpa!=null){ gpaScoreDetail = Math.min(gpa/4.0,1.0)*80.0; }
+            }
             JsonNode talent = root.path("specialAcademicTalent");
             defensePassed = talent.path("defensePassed").asBoolean(false);
             JsonNode acad = root.path("academicAchievements");
@@ -294,28 +474,65 @@ public class ApplicationService {
             double competitionScore = computeCompetitionScore(acad.path("competitions"));
             double innovationScore=0.0; for(JsonNode ip: acad.path("innovationProjects")){ if(!"已结项".equals(ip.path("status").asText())) continue; String level=ip.path("level").asText(""); String role=ip.path("role").asText(""); double add=0; switch(level){case "国家级": add="组长".equals(role)?1:0.3; break; case "省级": add="组长".equals(role)?0.5:0.2; break; case "校级": add="组长".equals(role)?0.1:0.05; break; default: add=0;} innovationScore+=add; }
             if(innovationScore>2) innovationScore=2;
-            specRaw = defensePassed? 15 : Math.min(15, publicationScore + patentScore + competitionScore + innovationScore);
+            specRaw = defensePassed? 15 : Math.min(15, publicationScore + patentScore + competitionScore + innovationScore); // 直接 0-15
             JsonNode comp = root.path("comprehensivePerformance");
             double volunteerHours = comp.path("volunteerService").path("hours").asDouble(0);
             JsonNode segments = comp.path("volunteerService").path("segments");
             if(segments.isArray() && segments.size()>0){ double effective=0; for(JsonNode seg: segments){ double h= seg.path("hours").asDouble(0); String t= seg.path("type").asText("normal"); effective += ("normal".equals(t)? h: h/2.0); } volunteerHours = effective; }
-            double hoursScore=0; if(volunteerHours>=200){ hoursScore = Math.min(1, ((volunteerHours-200)/2.0)*0.05); }
-            double awardScore=0; for(JsonNode aw: comp.path("volunteerService").path("awards")){ String lvl=aw.path("level").asText(""); String role=aw.path("role").asText("PERSONAL"); double val=0; if("国家级".equals(lvl)) val=1; else if("省级".equals(lvl)) val=0.5; else if("校级".equals(lvl)) val=0.25; if("TEAM_MEMBER".equals(role)) val = val/2; awardScore = Math.max(awardScore, val); } if(awardScore>1) awardScore=1; double volunteerScore = Math.min(2, hoursScore+awardScore);
-            HashMap<Integer, Double> honorYear = new HashMap<>(); for(JsonNode h: comp.path("honors")){ String lvl=h.path("level").asText(""); int y=h.path("year").asInt(0); double v=0; if("国家级".equals(lvl)) v=2; else if("省级".equals(lvl)) v=1; else if("校级".equals(lvl)) v=0.2; if(h.path("isCollective").asBoolean(false)) v/=2; honorYear.merge(y, v, Math::max); } double honorScore = honorYear.values().stream().mapToDouble(Double::doubleValue).sum(); if(honorScore>2) honorScore=2;
-            HashMap<Integer, Double> swYear = new HashMap<>(); for(JsonNode sw: comp.path("socialWork")){ String lvl= sw.path("level").asText("MEMBER"); double coef= switch(lvl){ case "EXEC"->2; case "PRESIDIUM"->1.5; case "HEAD"->1; case "DEPUTY"->0.75; default->0.5; }; double rating= sw.path("rating").asDouble(0); double val = coef * (rating/100.0); int y= sw.path("year").asInt(0); swYear.merge(y, val, Math::max); } double socialScore = swYear.values().stream().mapToDouble(Double::doubleValue).sum(); if(socialScore>2) socialScore=2;
-            double sportsScore=0; for(JsonNode sp: comp.path("sports")){ String scope=sp.path("scope").asText(""); String result=sp.path("result").asText(""); double base=0; if("国际级".equals(scope)){ base = switch(result){ case "冠军"->8; case "亚军"->6.5; case "季军"->5; case "四至八名"->3.5; default->0; }; } else if("国家级".equals(scope)){ base = switch(result){ case "冠军"->5; case "亚军"->3.5; case "季军"->2; case "四至八名"->1; default->0; }; } boolean team= sp.path("isTeam").asBoolean(false); if(team){ int size= sp.path("teamSize").asInt(0); if(size>0) base/=size; } else base/=3.0; sportsScore += base; }
-            double perfTotal = volunteerScore + honorScore + socialScore + sportsScore; if(perfTotal>5) perfTotal=5; perfRaw = perfTotal;
-            try { com.fasterxml.jackson.databind.node.ObjectNode obj = root.isObject()? (com.fasterxml.jackson.databind.node.ObjectNode)root : MAPPER.createObjectNode(); com.fasterxml.jackson.databind.node.ObjectNode raw = obj.with("calculatedRaw"); raw.put("specRaw", specRaw); raw.put("perfRaw", perfRaw); app.setContent(MAPPER.writeValueAsString(obj)); } catch (Exception ignoreInner) {}
+            double hoursScore=0; if(volunteerHours>=200){ hoursScore = Math.min(1, ((volunteerHours-200)/2.0)*0.05); } // 满 1 分上限
+            double awardScore=0; for(JsonNode aw: comp.path("volunteerService").path("awards")){ String lvl=aw.path("level").asText(""); String role=aw.path("role").asText("PERSONAL"); double val=0; if("国家级".equals(lvl)) val=1; else if("省级".equals(lvl)) val=0.5; else if("校级".equals(lvl)) val=0.25; if("TEAM_MEMBER".equals(role)) val = val/2; awardScore = Math.max(awardScore, val); } if(awardScore>1) awardScore=1; double volunteerScore = Math.min(2, hoursScore+awardScore); // 志愿服务最高 2 分
+            HashMap<Integer, Double> honorYear = new HashMap<>(); for(JsonNode h: comp.path("honors")){ String lvl=h.path("level").asText(""); int y=h.path("year").asInt(0); double v=0; if("国家级".equals(lvl)) v=2; else if("省级".equals(lvl)) v=1; else if("校级".equals(lvl)) v=0.2; if(h.path("isCollective").asBoolean(false)) v/=2; honorYear.merge(y, v, Math::max); } double honorScore = honorYear.values().stream().mapToDouble(Double::doubleValue).sum(); if(honorScore>2) honorScore=2; // 荣誉称号最高 2
+            HashMap<Integer, Double> swYear = new HashMap<>(); for(JsonNode sw: comp.path("socialWork")){ String lvl= sw.path("level").asText("MEMBER"); double coef= switch(lvl){ case "EXEC"->2; case "PRESIDIUM"->1.5; case "HEAD"->1; case "DEPUTY"->0.75; default->0.5; }; double rating= sw.path("rating").asDouble(0); double val = coef * (rating/100.0); int y= sw.path("year").asInt(0); swYear.merge(y, val, Math::max); } double socialScore = swYear.values().stream().mapToDouble(Double::doubleValue).sum(); if(socialScore>2) socialScore=2; // 社会工作最高 2
+            // 体育比赛计分（之前遗漏导致 sportsScore 未定义）
+            double sportsScore = 0; for(JsonNode sp: comp.path("sports")){ String scope=sp.path("scope").asText(""); String result=sp.path("result").asText(""); double base=0; if("国际级".equals(scope)){ base = switch(result){ case "冠军"->8; case "亚军"->6.5; case "季军"->5; case "四至八名"->3.5; default->0; }; } else if("国家级".equals(scope)){ base = switch(result){ case "冠军"->5; case "亚军"->3.5; case "季军"->2; case "四至八名"->1; default->0; }; } boolean team= sp.path("isTeam").asBoolean(false); if(team){ int size= sp.path("teamSize").asInt(0); if(size>0) base/=size; } else base/=3.0; sportsScore += base; }
+            double perfTotal = volunteerScore + honorScore + socialScore + sportsScore; // base before internship/military
+            // === 国际组织实习 === (满 1 分) ===
+            double internshipScore = 0;
+            JsonNode compPerf = comp; // alias
+            if(compPerf.has("internshipMonths")){
+                double m = compPerf.path("internshipMonths").asDouble(0);
+                if(m >= 12) internshipScore = 1; else if(m > 6) internshipScore = 0.5; else internshipScore = 0;
+            } else {
+                String internshipFlag = compPerf.path("internship").asText("").toUpperCase(Locale.ROOT);
+                if(internshipFlag.contains("FULL" ) || internshipFlag.contains("YEAR")) internshipScore = 1; else if(internshipFlag.contains("HALF") || internshipFlag.contains("SEMESTER")) internshipScore = 0.5; // else 0
+            }
+            // === 参军入伍服兵役 === (满 2 分) ===
+            double militaryScore = 0; int ms = compPerf.path("militaryYears").asInt(0); if(ms >= 2) militaryScore = 2; else if(ms >=1) militaryScore = 1;
+            perfTotal += internshipScore + militaryScore;
+            if(perfTotal>5) perfTotal=5; perfRaw = perfTotal; // 直接 0-5
+            try {
+                com.fasterxml.jackson.databind.node.ObjectNode obj = root.isObject()? (com.fasterxml.jackson.databind.node.ObjectNode)root : MAPPER.createObjectNode();
+                com.fasterxml.jackson.databind.node.ObjectNode raw = obj.with("calculatedRaw"); raw.put("specRaw", specRaw); raw.put("perfRaw", perfRaw); raw.put("internshipScore", internshipScore); raw.put("militaryScore", militaryScore); if(rankScoreDetail!=null) raw.put("academicRankScore", rankScoreDetail); if(gpaScoreDetail!=null) raw.put("academicGpaScore", gpaScoreDetail); if(convertedDetail!=null) raw.put("academicConvertedScore", convertedDetail); raw.put("academicBaseUsed", academicBase);
+                if(!raw.has("academicConvertedScore")) { double est = academicBase/0.8; if(est<0) est=0; if(est>100) est=100; raw.put("academicConvertedScore", est); }
+                com.fasterxml.jackson.databind.node.ObjectNode scores = obj.with("calculatedScores");
+                scores.put("academicScore", academicBase);
+                scores.put("academicAchievementScore", specRaw);
+                scores.put("performanceScore", perfRaw);
+                scores.put("totalScore", academicBase + specRaw + perfRaw);
+                app.setContent(MAPPER.writeValueAsString(obj));
+            } catch (Exception ignoreInner) {}
         } catch (Exception ignored){ }
-        double specWeighted = (specRaw/15.0)*12.0; double perfWeighted = (perfRaw/5.0)*8.0; app.setAcademicScore(academicBase); app.setAchievementScore(specWeighted); app.setPerformanceScore(perfWeighted); app.setTotalScore(academicBase + specWeighted + perfWeighted);
+        // 不再缩放，直接赋值
+        app.setAcademicScore(academicBase);
+        app.setAchievementScore(specRaw); // 0-15
+        app.setPerformanceScore(perfRaw); // 0-5
+        app.setTotalScore(academicBase + specRaw + perfRaw); // 满分 100
     }
 
     private double computeAcademicBaseFromApp(Application app){
-        // Prefer user entity values; fallback to content.basicInfo
+        // Prefer: explicit converted percentage (0-100) if present in content.basicInfo.
+        JsonNode rootNode = parseContent(app.getContent());
+        JsonNode bNode = rootNode.path("basicInfo");
+        Double converted = null;
+        if(bNode.hasNonNull("convertedScore")) converted = bNode.path("convertedScore").asDouble();
+        else if(bNode.hasNonNull("percentageScore")) converted = bNode.path("percentageScore").asDouble();
+        else if(bNode.hasNonNull("averageScore100")) converted = bNode.path("averageScore100").asDouble();
+        if(converted!=null){ double baseFromPct = Math.max(0, Math.min(100, converted)) * 0.8; return Math.min(80, baseFromPct); }
+        // Fallback to GPA & rank blending heuristic
         User u = app.getUser();
         Double gpa = u.getGpa(); Integer rank = u.getAcademicRank(); Integer total = u.getMajorTotal();
         if(gpa==null || rank==null || total==null){
-            try { JsonNode root = parseContent(app.getContent()); JsonNode b = root.path("basicInfo"); if(gpa==null && b.hasNonNull("gpa")) gpa = b.path("gpa").asDouble(); if(rank==null && b.hasNonNull("academicRanking")) rank = b.path("academicRanking").asInt(); if(total==null && b.hasNonNull("totalStudents")) total = b.path("totalStudents").asInt(); } catch(Exception ignored){}
+            try { JsonNode b = bNode; if(gpa==null && b.hasNonNull("gpa")) gpa = b.path("gpa").asDouble(); if(rank==null && b.hasNonNull("academicRanking")) rank = b.path("academicRanking").asInt(); if(total==null && b.hasNonNull("totalStudents")) total = b.path("totalStudents").asInt(); } catch(Exception ignored){}
         }
         double rankScore = 0; if(rank!=null && total!=null && total>0){ rankScore = ((double)(total - rank +1)/ total)*80.0; }
         double gpaScore = 0; if(gpa!=null){ double factor = Math.min(gpa/4.0,1.0); gpaScore = factor*80.0; }
@@ -474,8 +691,56 @@ public class ApplicationService {
         String merged = mergeContent(app.getContent(), contentJson==null?"{}":contentJson);
         app.setContent(merged);
         recalcScores(app);
-        app.setStatus(ApplicationStatus.SYSTEM_REVIEWING);
+        app.setStatus(ApplicationStatus.SYSTEM_APPROVED);
         app.setSubmittedAt(LocalDateTime.now());
+        app.setSystemReviewedAt(LocalDateTime.now());
+        app.setSystemReviewComment(null);
+        return applicationRepository.save(app);
+    }
+
+    private boolean hasAuthority(String role){
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if(auth==null) return false;
+            return auth.getAuthorities().stream().anyMatch(a-> role.equals(a.getAuthority()));
+        } catch(Exception e){ return false; }
+    }
+    private void ensureAdminOrReviewer(){
+        if(!(hasAuthority("ADMIN") || hasAuthority("REVIEWER"))){
+            throw new IllegalStateException("无权执行该操作");
+        }
+    }
+
+    public Application cancel(Long id){
+        Application app = applicationRepository.findById(id).orElseThrow();
+        // 只有管理员或本人可取消；审核员(REVIEWER)不再具备取消权限
+        boolean admin = hasAuthority("ADMIN");
+        if(!admin){
+            User me = currentUserEntity();
+            if(!app.getUser().getId().equals(me.getId())){
+                throw new IllegalStateException("无权取消该申请");
+            }
+        }
+        if(app.getStatus()==ApplicationStatus.APPROVED){
+            throw new IllegalStateException("已通过的申请不能取消");
+        }
+        if(app.getStatus()==ApplicationStatus.CANCELLED){
+            return app; // 幂等
+        }
+        app.setStatus(ApplicationStatus.CANCELLED);
+        return applicationRepository.save(app);
+    }
+
+    public Application reopenAdminReview(Long id, String reason){
+        ensureAdminOrReviewer();
+        Application app = applicationRepository.findById(id).orElseThrow();
+        if(app.getStatus()!=ApplicationStatus.APPROVED && app.getStatus()!=ApplicationStatus.REJECTED){
+            throw new IllegalStateException("仅已通过或已拒绝的申请可重新审核");
+        }
+        String prev = app.getAdminReviewComment();
+        String marker = "【复核发起"+LocalDateTime.now()+"】"+(reason==null||reason.isBlank()?"":" "+reason.trim());
+        app.setAdminReviewComment((prev==null?"":prev+"\n")+marker);
+        app.setStatus(ApplicationStatus.ADMIN_REVIEWING);
         return applicationRepository.save(app);
     }
 }

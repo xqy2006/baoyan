@@ -5,9 +5,9 @@ services:
     container_name: xmudemo-mysql
     restart: unless-stopped
     environment:
+      # Loaded from .env (provide real values there); DO NOT commit real passwords.
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-RootChangeMe123!}
       MYSQL_DATABASE: ${DB_NAME:-xmudemo}
-      # Create a dedicated application user (do NOT set to 'root')
       MYSQL_USER: ${DB_USERNAME:-appuser}
       MYSQL_PASSWORD: ${DB_PASSWORD:-AppChangeMe123!}
     command: ["mysqld", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
@@ -31,26 +31,31 @@ services:
         condition: service_healthy
     environment:
       APP_PORT: ${APP_PORT:-8080}
-      DB_URL: jdbc:mysql://db:3306/${DB_NAME:-xmudemo}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+      DB_HOST: ${DB_HOST:-db}
+      DB_NAME: ${DB_NAME:-xmudemo}
+      # Compose final JDBC URL (still overridable directly if you pass DB_URL)
+      DB_URL: ${DB_URL:-jdbc:mysql://${DB_HOST:-db}:3306/${DB_NAME:-xmudemo}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8}
       DB_USERNAME: ${DB_USERNAME:-appuser}
       DB_PASSWORD: ${DB_PASSWORD:-AppChangeMe123!}
       JWT_SECRET: ${JWT_SECRET:-CHANGE_ME_TO_A_LONG_RANDOM_SECRET}
       JAVA_OPTS: ${JAVA_OPTS:-"-Xms256m -Xmx512m"}
+      # APP_UPLOAD_DIR optional; defaults in application.properties
+      # APP_UPLOAD_DIR: /app/uploads
+      # SPRING_PROFILES_ACTIVE: prod
     ports:
       - "8080:8080"
     volumes:
       - uploads_data:/app/uploads
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 50s
 
-  frontend:
-    build: ./frontend
-    image: xmudemo-frontend:latest
-    container_name: xmudemo-frontend
-    depends_on:
-      - backend
-    ports:
-      - "3000:80"
-    restart: unless-stopped
+# Removed separate frontend service because the Spring Boot JAR already serves static assets.
+# If you later want to restore an external SPA + nginx, re-add a frontend service here.
 
 volumes:
   db_data:

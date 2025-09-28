@@ -18,6 +18,8 @@ import {
   Star,
   Printer
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { ConfirmDialog } from './ui/confirm-dialog';
 
 interface ApplicationReviewProps {
   application: Application;
@@ -39,6 +41,7 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
   const [reviewComment, setReviewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [appState, setAppState] = useState<Application>(initialApp);
+  const [confirmApproveOpen, setConfirmApproveOpen] = useState(false);
   const isAdmin = user.role === 'ADMIN';
   const isReviewer = user.role === 'REVIEWER';
   const isStudent = user.role === 'STUDENT';
@@ -53,7 +56,8 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
       a.download = `application-${appState.id}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=> URL.revokeObjectURL(a.href), 2000);
-    } catch(e:any){ alert(e.message); }
+      toast.success('PDF 导出成功');
+    } catch(e:any){ toast.error(e.message); }
   };
 
   const viewFile = (id?:number) => { if(!id) return; window.open(`/api/files/${id}/raw`, '_blank'); };
@@ -98,29 +102,28 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
         throw new Error(err.error || '操作失败');
       }
       await refresh(appState.id);
-    } catch (e:any) { alert(e.message); }
+      toast.success('操作成功');
+    } catch (e:any) { toast.error(e.message); }
     finally { setIsSubmitting(false); }
   };
 
   const handleSystemReview = () => call('system-review');
   const handleStartAdmin = () => call('admin-start');
   const handleApprove = () => {
-    if (!reviewComment) { if(!confirm('无审核意见，确定通过?')) return; }
+    if (!reviewComment) { setConfirmApproveOpen(true); return; }
     call('admin-review', { approve:true, comment: reviewComment });
   };
+  const confirmApproveNoComment = () => { call('admin-review', { approve:true, comment: reviewComment }); };
   const handleReject = () => {
-    if (!reviewComment) { alert('请填写拒绝理由'); return; }
+    if (!reviewComment) { toast.error('请填写拒绝理由'); return; }
     call('admin-review', { approve:false, comment: reviewComment });
   };
 
-  // 后端分值（加权）与原始值（calculatedRaw）
+  // 后端分值：academicScore 0-80; academicAchievementScore 0-15; performanceScore 0-5; total = sum
   const academicScore = appState.calculatedScores?.academicScore ?? 0; // 0-80
-  const specWeighted = appState.calculatedScores?.academicAchievementScore ?? (appState.calculatedScores? 0:0); // 0-12
-  const perfWeighted = appState.calculatedScores?.performanceScore ?? 0; // 0-8
-  const specRaw = appState.calculatedRaw?.specRaw ?? (specWeighted? (specWeighted/12)*15 : 0); // 0-15 (推导兜底)
-  const perfRaw = appState.calculatedRaw?.perfRaw ?? (perfWeighted? (perfWeighted/8)*5 : 0); // 0-5
-  const assessWeighted = specWeighted + perfWeighted; // 0-20
-  const totalScore = appState.calculatedScores?.totalScore ?? (academicScore + assessWeighted);
+  const specScore = appState.calculatedScores?.academicAchievementScore ?? 0; // 0-15
+  const perfScore = appState.calculatedScores?.performanceScore ?? 0; // 0-5
+  const totalScore = appState.calculatedScores?.totalScore ?? (academicScore + specScore + perfScore);
 
   const getStatusColor = (status: Application['status']) => {
     switch (status) {
@@ -235,31 +238,42 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
                 <h3 className="text-lg">推免综合成绩（后台计算）</h3>
               </div>
               <p className="text-xs text-gray-500 leading-relaxed mb-3">
-                条例要点：学业综合占 80 分；学术专长原始 15 分折算 12%；综合表现原始 5 分折算 8%；总分 = 学业(≤80)+12+8。
-                共同一作各 50%；C 类论文最多 2 篇；创新/创业项目加分封顶 2；志愿服务工时≥200 后每 2 小时 +0.05 (至 1) + 表彰(≤1)；社会工作/荣誉/体育各自按条例封顶。
+                条例要点：学业综合 0-80 分；学术专长 0-15 分（特殊学术专长答辩通过直接记满 15）；综合表现 0-5 分；总分 = 三部分相加 (满分100)。论文：共同一作各 50%；C 类论文最多 2 篇；创新/创业项目加分封顶 2；志愿服务：≥200 小时后每 +2 小时 +0.05 (至 1 分上限) + 表彰(≤1)；社会工作 / 荣誉 / 体育及其它单项各按封顶规则；国际组织实习≤1分；参军服役≤2分；综合表现合计封顶 5 分。
               </p>
               <div className="space-y-2">
+                {(() => {
+                  const raw = appState.calculatedRaw || {} as any;
+                  const academicPct = raw.academicConvertedScore; // 0-100
+                  const gpaPart = raw.academicGpaScore; // 0-80 (component before 0.8 factor baked in)
+                  const rankPart = raw.academicRankScore; // 0-80
+                  const baseUsed = raw.academicBaseUsed; // 0-80
+                  return academicPct !== undefined ? (
+                    <div className="p-3 bg-white/60 rounded border border-gray-200 text-[11px] text-gray-600 leading-relaxed">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span>原始百分制学业: <span className="text-blue-600 font-medium">{academicPct.toFixed(4)}</span></span>
+                        {gpaPart!==undefined && <span>GPA折算80制: {gpaPart.toFixed(2)}</span>}
+                        {rankPart!==undefined && <span>排名折算80制: {rankPart.toFixed(2)}</span>}
+                        {baseUsed!==undefined && <span>采用学业(0-80): <span className="font-medium">{baseUsed.toFixed(2)}</span></span>}
+                        <span>逻辑: 百分制 = (GPA% + 排名%) / 2；(百分制×0.8→0-80)</span>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
                 <div className="flex justify-between p-3 bg-gray-50 rounded">
                   <span>学业综合成绩 (0-80)</span>
                   <span className="font-medium">{academicScore.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between p-3 bg-gray-50 rounded">
-                  <span>学术专长（加权 12%）</span>
+                  <span>学术专长 (0-15)</span>
                   <div className="text-right">
-                    <p className="font-medium text-blue-600">{specWeighted.toFixed(2)}</p>
-                    <p className="text-[11px] text-gray-500">原始 {specRaw.toFixed(2)} /15 → ×12/15</p>
+                    <p className="font-medium text-blue-600">{specScore.toFixed(2)}</p>
                   </div>
                 </div>
                 <div className="flex justify-between p-3 bg-gray-50 rounded">
-                  <span>综合表现（加权 8%）</span>
+                  <span>综合表现 (0-5)</span>
                   <div className="text-right">
-                    <p className="font-medium text-green-600">{perfWeighted.toFixed(2)}</p>
-                    <p className="text-[11px] text-gray-500">原始 {perfRaw.toFixed(2)} /5 → ×8/5</p>
+                    <p className="font-medium text-green-600">{perfScore.toFixed(2)}</p>
                   </div>
-                </div>
-                <div className="flex justify-between p-3 bg-indigo-50 rounded">
-                  <span className="font-medium">考核加权小计</span>
-                  <span className="text-indigo-600 font-medium">{assessWeighted.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between p-3 bg-blue-50 rounded">
                   <span className="font-semibold">推免综合成绩 (0-100)</span>
@@ -267,7 +281,7 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
                 </div>
               </div>
               {appState.specialAcademicTalent?.isApplying && (
-                <div className={`mt-3 p-3 rounded border text-xs ${appState.specialAcademicTalent.defensePassed? 'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-yellow-50 border-yellow-200 text-yellow-700'}`}>特殊学术专长：{appState.specialAcademicTalent.defensePassed? '答辩通过（专长加分按满分 15 记入 12%）':'待答辩 / 尚未通过（按实际计算）'}</div>
+                <div className={`mt-3 p-3 rounded border text-xs ${appState.specialAcademicTalent.defensePassed? 'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-yellow-50 border-yellow-200 text-yellow-700'}`}>特殊学术专长：{appState.specialAcademicTalent.defensePassed? '答辩通过（学术专长直接记 15 分）':'待答辩 / 尚未通过（按实际计算）'}</div>
               )}
             </TabsContent>
 
@@ -465,31 +479,147 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
 
             {/* 材料证明 */}
             <TabsContent value="files" className="p-4 space-y-5">
-              {(() => { const uf:any = (appState as any).uploadedFiles || {}; const Section = ({title, list}:{title:string; list:any[]}) => list && list.length>0 ? (
-                <div>
-                  <h4 className="text-sm mb-3">{title}</h4>
-                  {list.map((file,i)=>(
-                    <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded mb-2">
-                      <div>
-                        <p className="text-sm">{file.originalFilename || file.name || file.title || '文件'}{file.contentType? ` (${file.contentType})`:''}</p>
-                        <p className="text-xs text-gray-500">上传：{file.uploadedAt || file.uploadDate || '-'}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={()=>viewFile(file.id)} disabled={!file.id}><Eye className="w-3 h-3 mr-1" />查看</Button>
-                        <Button size="sm" variant="outline" onClick={()=>downloadFile(file.id)} disabled={!file.id}><Download className="w-3 h-3 mr-1" />下载</Button>
-                      </div>
+              {(() => {
+                const uf: any = (appState as any).uploadedFiles || {};
+                const pubs = academic.publications || [];
+                const comps = academic.competitions || [];
+                const pats = academic.patents || [];
+                const honors = (compPerf.honors || []);
+                const innovations = (academic.innovationProjects || []);
+                const transcripts = uf.transcripts || [];
+                const pubProofs = uf.publicationProofs || [];
+                const compProofs = uf.competitionProofs || [];
+                const patentProofs = uf.patentProofs || [];
+                const honorProofs = uf.honorProofs || [];
+                const innovationProofs = uf.innovationProofs || [];
+
+                // 通用获取匹配文件（通过 item.proofFileIds / proofFileId 或索引顺序）
+                const matchFiles = (item: any, arr: any[], index: number) => {
+                  if (!arr || arr.length === 0) return [];
+                  if (item?.proofFileIds && Array.isArray(item.proofFileIds)) {
+                    return item.proofFileIds.map((id: number) => arr.find(f => f.id === id)).filter(Boolean);
+                  }
+                  if (item?.proofFileId) {
+                    const m = arr.find(f => f.id === item.proofFileId);
+                    if (m) return [m];
+                  }
+                  return [];
+                };
+
+                // 简单缩略文件卡片
+                const FileThumb: React.FC<{file:any}> = ({ file }) => {
+                  if(!file) return null;
+                  const isImg = file.contentType?.startsWith('image/');
+                  return (
+                    <div className="border rounded p-2 bg-white shadow-sm" key={file.id}>
+                      <div className="text-[11px] text-gray-500 mb-1 break-all">{file.originalFilename || file.name}</div>
+                      {isImg ? (
+                        <img src={`/api/files/${file.id}/raw`} alt={file.originalFilename||'proof'} className="max-h-48 object-contain mx-auto" />
+                      ) : (
+                        <div className="flex gap-2 flex-wrap text-[11px]">
+                          <Button size="xs" variant="outline" onClick={()=>viewFile(file.id)}>查看</Button>
+                          <Button size="xs" variant="outline" onClick={()=>downloadFile(file.id)}>下载</Button>
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>) : null;
-                return <>
-                  <Section title="成绩单" list={uf.transcripts||[]} />
-                  <Section title="论文证明" list={uf.publicationProofs||[]} />
-                  <Section title="竞赛证明" list={uf.competitionProofs||[]} />
-                  <Section title="专利证明" list={uf.patentProofs||[]} />
-                  <Section title="荣誉证明" list={uf.honorProofs||[]} />
-                  <Section title="科创项目证明" list={uf.innovationProofs||[]} />
-                  {!( (uf.transcripts||[]).length + (uf.publicationProofs||[]).length + (uf.competitionProofs||[]).length + (uf.patentProofs||[]).length + (uf.honorProofs||[]).length + (uf.innovationProofs||[]).length ) && <div className="text-xs text-gray-400">暂无已上传的证明文件</div>}
-                </> })()}
+                  );
+                };
+
+                const Section: React.FC<{title:string; children:React.ReactNode}> = ({title,children}) => (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium">{title}</h4>
+                    {children}
+                  </div>
+                );
+
+                const Empty = <div className="text-xs text-gray-400">暂无</div>;
+
+                return (
+                  <div className="space-y-6">
+                    <Section title="成绩单">
+                      {transcripts.length? <div className="grid gap-3 md:grid-cols-3">{transcripts.map((f:any)=><FileThumb key={f.id} file={f} />)}</div>: Empty}
+                    </Section>
+                    <Section title="论文发表">
+                      {pubs.length? pubs.map((p:any,i:number)=>{
+                        const proofs = matchFiles(p,pubProofs,i);
+                        return <div key={i} className="border rounded p-3 bg-gray-50 space-y-2">
+                          <div className="text-sm font-medium break-all">{p.title||'（未填写标题）'}</div>
+                          <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
+                            <span>类别:{p.type||'-'}</span>
+                            <span>期刊:{p.journal||'-'}</span>
+                            <span>年份:{p.publishYear||'-'}</span>
+                            <span>作者:{p.authorRank}/{p.totalAuthors||'?'}{p.isCoFirst&&' (共同一作)'} </span>
+                            {p.score!=null && <span className="text-blue-600">加分:{p.score}</span>}
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-3">
+                            {proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明</div>}
+                          </div>
+                        </div>;
+                      }): Empty}
+                    </Section>
+                    <Section title="学科竞赛">
+                      {comps.length? comps.map((c:any,i:number)=>{
+                        const proofs = matchFiles(c,compProofs,i);
+                        return <div key={i} className="border rounded p-3 bg-gray-50 space-y-2">
+                          <div className="text-sm font-medium break-all">{c.name||'（未填写名称）'}</div>
+                          <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
+                            <span>级别:{c.level||'-'}</span>
+                            <span>奖项:{c.award||'-'}</span>
+                            <span>年份:{c.year||'-'}</span>
+                            {c.isTeam && <span>团队:{c.teamRank}/{c.totalTeamMembers}</span>}
+                            {c.score!=null && <span className="text-blue-600">加分:{c.score}</span>}
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-3">
+                            {proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明</div>}
+                          </div>
+                        </div>;
+                      }): Empty}
+                    </Section>
+                    <Section title="专利授权">
+                      {pats.length? pats.map((p:any,i:number)=>{
+                        const proofs = matchFiles(p,patentProofs,i);
+                        return <div key={i} className="border rounded p-3 bg-gray-50 space-y-2">
+                          <div className="text-sm font-medium break-all">{p.title||'（未填写标题）'}</div>
+                          <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
+                            <span>专利号:{p.patentNumber||'-'}</span>
+                            <span>年份:{p.grantYear||'-'}</span>
+                            {p.score!=null && <span className="text-blue-600">加分:{p.score}</span>}
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-3">{proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明</div>}</div>
+                        </div>;
+                      }): Empty}
+                    </Section>
+                    <Section title="荣誉称号">
+                      {honors.length? honors.map((h:any,i:number)=>{
+                        const proofs = matchFiles(h,honorProofs,i);
+                        return <div key={i} className="border rounded p-3 bg-gray-50 space-y-2">
+                          <div className="text-sm font-medium break-all">{h.title||'（未填写）'}</div>
+                          <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
+                            <span>等级:{h.level||'-'}</span><span>年份:{h.year||'-'}</span>
+                            {h.score!=null && <span className="text-blue-600">加分:{h.score}</span>}
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-3">{proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明</div>}</div>
+                        </div>;
+                      }): Empty}
+                    </Section>
+                    <Section title="科创 / 创新项目">
+                      {innovations.length? innovations.map((ip:any,i:number)=>{
+                        const proofs = matchFiles(ip,innovationProofs,i);
+                        return <div key={i} className="border rounded p-3 bg-gray-50 space-y-2">
+                          <div className="text-sm font-medium break-all">{ip.name||ip.title||'（未填写）'}</div>
+                          <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
+                            {ip.role && <span>角色:{ip.role}</span>}
+                            {ip.level && <span>级别:{ip.level}</span>}
+                            {ip.year && <span>年份:{ip.year}</span>}
+                            {ip.score!=null && <span className="text-blue-600">加分:{ip.score}</span>}
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-3">{proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明</div>}</div>
+                        </div>;
+                      }): Empty}
+                    </Section>
+                  </div>
+                );
+              })()}
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -505,98 +635,46 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
         </CardHeader>
         <CardContent>
           <div className="bg-gray-50 p-4 rounded max-h-40 overflow-y-auto">
-            <p className="text-sm leading-relaxed">{appState.personalStatement}</p>
+            <p className="text-sm leading-relaxed whitespace-pre-line">{appState.personalStatement}</p>
           </div>
         </CardContent>
       </Card>
 
       {/* 审核操作 */}
-      {isAdmin && appState.status === 'system_approved' && (
+      { (isAdmin || isReviewer) && appState.status === 'system_approved' && (
         <Card>
-          <CardHeader>
-            <CardTitle>管理员审核</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>进入人工审核</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="text-xs text-gray-500">当前申请已通过系统审核，点击进入人工审核后可进行通过/拒绝操作。</div>
+            <Button onClick={handleStartAdmin} disabled={isSubmitting || appState.status==='admin_reviewing'} size="sm">进入人工审核</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {(isAdmin || isReviewer) && appState.status === 'admin_reviewing' && (
+        <Card>
+          <CardHeader><CardTitle>审核操作</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <label className="text-sm mb-2 block">审核意见</label>
-              <Textarea
-                placeholder="请输入详细的审核意见..."
-                value={reviewComment}
-                onChange={(e) => setReviewComment(e.target.value)}
-                rows={4}
-              />
+              <label className="text-sm mb-2 block">审核意见（拒绝时必填）</label>
+              <Textarea rows={4} value={reviewComment} onChange={e=>setReviewComment(e.target.value)} placeholder="请输入审核意见" />
             </div>
-            
-            <div className="flex space-x-3">
-              <Button 
-                onClick={handleApprove}
-                disabled={isSubmitting}
-                className="flex-1"
-              >
-                <CheckCircle className="w-4 h-4 mr-2" />
-                {isSubmitting ? '处理中...' : '通过申请'}
-              </Button>
-              <Button 
-                onClick={handleReject}
-                disabled={isSubmitting}
-                variant="destructive"
-                className="flex-1"
-              >
-                <XCircle className="w-4 h-4 mr-2" />
-                {isSubmitting ? '处理中...' : '拒绝申请'}
-              </Button>
+            <div className="flex gap-3 flex-wrap">
+              <Button onClick={handleApprove} disabled={isSubmitting} className="flex-1 min-w-[120px]"><CheckCircle className="w-4 h-4 mr-1" />{isSubmitting? '处理中...':'通过'}</Button>
+              <Button onClick={handleReject} disabled={isSubmitting} variant="destructive" className="flex-1 min-w-[120px]"><XCircle className="w-4 h-4 mr-1" />{isSubmitting? '处理中...':'拒绝'}</Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {isAdmin && (
-        <Card>
-          <CardHeader>
-            <CardTitle>管理员操作</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {appState.status === 'system_reviewing' && (
-              <Button size="sm" onClick={handleSystemReview} disabled={isSubmitting}>执行系统审核</Button>
-            )}
-            {appState.status === 'system_approved' && (
-              <Button size="sm" onClick={handleStartAdmin} disabled={isSubmitting}>进入人工审核</Button>
-            )}
-            {appState.status === 'admin_reviewing' && (
-              <div className="space-y-2">
-                <Textarea rows={3} placeholder="审核意见" value={reviewComment} onChange={e=>setReviewComment(e.target.value)} />
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={handleApprove} disabled={isSubmitting}>通过</Button>
-                  <Button size="sm" variant="destructive" onClick={handleReject} disabled={isSubmitting}>拒绝</Button>
-                </div>
-              </div>
-            )}
-            {appState.status === 'approved' && appState.adminReviewComment && (
-              <div className="text-sm text-green-700">审核意见：{appState.adminReviewComment}</div>
-            )}
-            {appState.status === 'rejected' && appState.adminReviewComment && (
-              <div className="text-sm text-red-700">审核意见：{appState.adminReviewComment}</div>
-            )}
-          </CardContent>
-        </Card>
+      {(isAdmin || isReviewer) && appState.status==='approved' && appState.adminReviewComment && (
+        <Card><CardHeader><CardTitle>审核结果</CardTitle></CardHeader><CardContent><div className="text-sm text-green-700">审核意见：{appState.adminReviewComment}</div></CardContent></Card>
+      )}
+      {(isAdmin || isReviewer) && appState.status==='rejected' && appState.adminReviewComment && (
+        <Card><CardHeader><CardTitle>审核结果</CardTitle></CardHeader><CardContent><div className="text-sm text-red-700">审核意见：{appState.adminReviewComment}</div></CardContent></Card>
       )}
 
-      {isAdmin && appState.specialAcademicTalent?.isApplying && !appState.specialAcademicTalent.defensePassed && (
-        <Card>
-          <CardHeader><CardTitle>特殊学术专长答辩</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-sm text-gray-600">通过后后端重算：学术专长原始分直接记为 15（折算 12%).</p>
-            <Button size="sm" onClick={async()=>{
-              try {
-                const res = await fetch(`/api/applications/${appState.id}/special-talent/pass`, { method:'POST', credentials:'include' });
-                if(!res.ok){ const e= await res.json().catch(()=>({})); console.warn('标记失败', e); }
-              } catch {/* ignore */}
-              await refresh(appState.id);
-            }}>标记“答辩通过”并刷新</Button>
-          </CardContent>
-        </Card>
-      )}
+      <ConfirmDialog open={confirmApproveOpen} onOpenChange={o=> setConfirmApproveOpen(o)} title="确认通过?" description="当前未填写审核意见，确定直接通过该申请？" confirmText="确认通过" onConfirm={confirmApproveNoComment} />
     </div>
   );
 };
-

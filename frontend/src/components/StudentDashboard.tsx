@@ -215,8 +215,26 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
           <div className="space-y-4">
             {activities.map((activity) => {
               const existed = appByActivity[activity.id];
+              const existedStatus = existed?.status;
+              const canReDraftStatuses = ['CANCELLED','REJECTED','SYSTEM_REJECTED'];
+              const inProgress = existedStatus && !canReDraftStatuses.includes(existedStatus) && existedStatus !== 'DRAFT';
               const localOnly = !existed && hasLocalDraft(activity.id);
-              const btnLabel = existed? (existed.status==='DRAFT'? '继续填写':'查看申请') : (localOnly? '继续填写(本地草稿)':'立即申请');
+              let btnLabel: string;
+              if(!existed){
+                btnLabel = localOnly? '继续填写(本地草稿)':'立即申请';
+              } else {
+                switch(existedStatus){
+                  case 'DRAFT': btnLabel = '继续填写'; break;
+                  case 'CANCELLED':
+                  case 'REJECTED':
+                  case 'SYSTEM_REJECTED': btnLabel = '重新申请'; break;
+                  case 'APPROVED': btnLabel = '已通过'; break;
+                  case 'SYSTEM_APPROVED': btnLabel = '待人工审核'; break;
+                  case 'ADMIN_REVIEWING': btnLabel = '人工审核中'; break;
+                  case 'SYSTEM_REVIEWING': btnLabel = '系统审核中'; break;
+                  default: btnLabel = '查看';
+                }
+              }
               return (
                 <Card key={activity.id} className="border-l-4 border-l-blue-500">
                   <CardContent className="p-4">
@@ -249,9 +267,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
                         {activity.description}
                       </p>
 
-                      <Button onClick={() => onApply(activity)} className="w-full" size="sm" disabled={!activity.isActive}>
+                      <Button onClick={() => !inProgress && onApply(activity)} className="w-full" size="sm" disabled={!activity.isActive || inProgress || existedStatus==='APPROVED'}>
                         {activity.isActive? btnLabel:'未开放'}
                       </Button>
+                      {(inProgress || existedStatus==='APPROVED') && (
+                        <div className="mt-2 text-[11px] text-gray-500 leading-snug">
+                          {existedStatus==='APPROVED' && '该活动申请已通过，不能再提交新的申请。'}
+                          {inProgress && existedStatus!=='APPROVED' && '已有进行中的申请，需等待结果或取消后才能重新申请。'}
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

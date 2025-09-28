@@ -6,6 +6,8 @@ import { User, Application } from '../App';
 import { CheckCircle, XCircle, Clock, Calendar, FileText, AlertTriangle, Eye } from 'lucide-react';
 import { Input } from './ui/input';
 import { exportApplicationsExcel } from './utils/exportExcel';
+import { toast } from 'sonner';
+import { ConfirmDialog, InputDialog } from './ui/confirm-dialog';
 
 interface ApplicationListProps {
   user: User;
@@ -19,15 +21,20 @@ const statusMap: Record<string,string> = {
   SYSTEM_REJECTED: 'system_rejected',
   ADMIN_REVIEWING: 'admin_reviewing',
   APPROVED: 'approved',
-  REJECTED: 'rejected'
+  REJECTED: 'rejected',
+  CANCELLED: 'cancelled'
 };
 
 export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview }) => {
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [reviewComment, setReviewComment] = useState('');
+  const [reviewComments, setReviewComments] = useState<Record<string,string>>({});
+  const [pendingCancelId, setPendingCancelId] = useState<string|null>(null);
+  const [reopenDialogId, setReopenDialogId] = useState<string|null>(null);
   const isAdmin = user.role === 'ADMIN';
+  const isReviewer = user.role === 'REVIEWER';
+  const isStudent = user.role === 'STUDENT';
 
   const mapBackendApp = (a:any): Application => {
     const content = a.content? (()=>{try{return JSON.parse(a.content);}catch{return {};}})():{};
@@ -69,8 +76,8 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
     setLoading(true); setError('');
     try {
       let url = '/api/applications';
-      if (user.role === 'STUDENT') url = '/api/applications/mine';
-      else if (user.role !== 'ADMIN') url = '/api/applications/review-queue';
+      if (isStudent) url = '/api/applications/mine';
+      else if (!isAdmin) url = '/api/applications/review-queue';
       const res = await fetch(url, { credentials:'include' });
       if (!res.ok) throw new Error('加载失败');
       const data = await res.json();
@@ -87,37 +94,39 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
     await load();
   };
 
-  const handleSystemReview = (id:string)=> action(id,'system-review').catch(e=>alert(e.message));
-  const handleStartAdmin = (id:string)=> action(id,'admin-start').catch(e=>alert(e.message));
-  const handleAdminApprove = (id:string)=> action(id,'admin-review', { approve:true, comment: reviewComment }).catch(e=>alert(e.message));
+  const handleSystemReview = (id:string)=> action(id,'system-review').catch(e=>toast.error(e.message));
+  const handleStartAdmin = (id:string)=> action(id,'admin-start').catch(e=>toast.error(e.message));
+  const handleAdminApprove = (id:string)=> action(id,'admin-review', { approve:true, comment: reviewComments[id]||'' }).catch(e=>toast.error(e.message));
   const handleAdminReject = (id:string)=> {
-    if (!reviewComment) { alert('请输入拒绝理由'); return; }
-    action(id,'admin-review',{ approve:false, comment: reviewComment }).catch(e=>alert(e.message));
+    const rc = reviewComments[id]||'';
+    if (!rc) { toast.error('请输入拒绝理由'); return; }
+    action(id,'admin-review',{ approve:false, comment: rc }).catch(e=>toast.error(e.message));
   };
-
-  const deletable = (app:Application) => {
-    // 使用后端状态映射前的原枚举已转为 statusMap -> 我们判断原字符串对应
-    return app.status==='pending' || app.status==='system_reviewing';
+  const handleCancel = (id:string) => { setPendingCancelId(id); };
+  const confirmCancel = () => {
+    if(!pendingCancelId) return;
+    action(pendingCancelId,'cancel')
+      .then(()=> { toast.success('已取消，可重新申请'); })
+      .catch(e=>toast.error(e.message))
+      .finally(()=> setPendingCancelId(null));
   };
-
-  const deleteApp = async (id:string) => {
-    if(!window.confirm('确认删除该申请？')) return;
-    try {
-      const res = await fetch(`/api/applications/${id}`, { method:'DELETE', credentials:'include' });
-      if(!res.ok){ const err = await res.json().catch(()=>({})); throw new Error(err.error||'删除失败'); }
-      await load();
-    } catch(e:any){ alert(e.message); }
+  const submitReopen = (id:string, reason:string) => {
+    action(id,'admin-reopen', reason.trim()? { reason: reason.trim() }: undefined)
+      .then(()=> { toast.success('已重新进入人工审核'); })
+      .catch(e=>toast.error(e.message))
+      .finally(()=> setReopenDialogId(null));
   };
 
   const getStatusInfo = (status: Application['status']) => {
     switch (status) {
       case 'pending': return { color: 'secondary', icon: Clock, text: '待系统审核', className: '' };
       case 'system_reviewing': return { color: 'default', icon: AlertTriangle, text: '系统审核中', className: '' };
-      case 'system_approved': return { color: 'default', icon: Eye, text: '待管理员审核', className: 'bg-blue-100 text-blue-800' };
-      case 'system_rejected': return { color: 'destructive', icon: XCircle, text: '系统审核未通过', className: '' };
-      case 'admin_reviewing': return { color: 'default', icon: Eye, text: '管理员审核中', className: '' };
+      case 'system_approved': return { color: 'default', icon: Eye, text: '待人工审核', className: 'bg-blue-100 text-blue-800' };
+      case 'system_rejected': return { color: 'destructive', icon: XCircle, text: '系统未通过', className: '' };
+      case 'admin_reviewing': return { color: 'default', icon: Eye, text: '人工审核中', className: '' };
       case 'approved': return { color: 'default', icon: CheckCircle, text: '审核通过', className: 'bg-green-100 text-green-800' };
       case 'rejected': return { color: 'destructive', icon: XCircle, text: '审核未通过', className: '' };
+      case 'cancelled': return { color: 'outline', icon: XCircle, text: '已取消', className: 'bg-gray-200 text-gray-600' };
       default: return { color: 'secondary', icon: Clock, text: '未知状态', className: '' };
     }
   };
@@ -135,7 +144,7 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
         </div>
       </div>
       {isAdmin && applications.length>0 && (
-        <div className="text-xs text-gray-500 pb-1">显示列：学业综合 / 学术专长(加权) / 综合表现(加权) / 总成绩</div>
+        <div className="text-xs text-gray-500 pb-1">显示列：学业综合(0-80) / 学术专长(0-15) / 综合表现(0-5) / 总成绩(0-100)</div>
       )}
       {error && <div className="text-sm text-red-600">{error}</div>}
       <div className="space-y-4">
@@ -167,23 +176,43 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
                     <div className="flex items-center space-x-2">
                       <Badge variant={statusInfo.color as any} className={statusInfo.className}>{statusInfo.text}</Badge>
                       <Button size="sm" variant="outline" onClick={()=> onReview && onReview(application)}>详情</Button>
-                      {!isAdmin && deletable(application) && <Button size="sm" variant="destructive" onClick={()=>deleteApp(application.id)}>删除</Button>}
+                      {(isAdmin || isReviewer) && (application.status==='approved' || application.status==='rejected') && (
+                        <Button size="sm" variant="outline" className="whitespace-nowrap" onClick={()=> setReopenDialogId(application.id)}>重新审核</Button>
+                      )}
+                      {isStudent && application.status!=='cancelled' && application.status!=='approved' && (
+                        <Button size="sm" variant="destructive" onClick={()=>handleCancel(application.id)}>取消</Button>
+                      )}
+                      {isStudent && application.status==='cancelled' && (
+                        <Button size="sm" variant="outline" onClick={()=> window.location.href = `/apply/${(application as any).activityId}`}>重新编辑</Button>
+                      )}
                     </div>
                   </div>
-                  {isAdmin && (
+                  {(isAdmin || isReviewer) && (
                     <div className="flex items-center gap-2 flex-wrap">
                       {application.status==='system_reviewing' && <Button size="xs" variant="outline" onClick={()=>handleSystemReview(application.id)}>系统审核</Button>}
                       {application.status==='system_approved' && <Button size="xs" variant="outline" onClick={()=>handleStartAdmin(application.id)}>进入人工审核</Button>}
                       {application.status==='admin_reviewing' && (
                         <>
-                          <Input placeholder="审核意见" value={reviewComment} onChange={e=>setReviewComment(e.target.value)} className="h-7 w-48" />
-                          <Button size="xs" onClick={()=>handleAdminApprove(application.id)}>通过</Button>
-                          <Button size="xs" variant="destructive" onClick={()=>handleAdminReject(application.id)}>拒绝</Button>
+                          <Input placeholder="审核意见(拒绝必填)" value={reviewComments[application.id]||''} onChange={e=> setReviewComments(m=>({...m,[application.id]:e.target.value}))} className="h-8 w-52" />
+                          <Button
+                            size="sm"
+                            className="min-w-[64px]"
+                            onClick={()=>handleAdminApprove(application.id)}
+                          >通过</Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            aria-label="拒绝申请"
+                            className="min-w-[64px]"
+                            onClick={()=>handleAdminReject(application.id)}
+                          >拒绝</Button>
                         </>
                       )}
+                      {isAdmin && application.status!=='approved' && application.status!=='cancelled' && application.status!=='admin_reviewing' && application.status!=='system_reviewing' && application.status!=='system_approved' && application.status!=='rejected' && <Button size="xs" variant="outline" onClick={()=>handleCancel(application.id, (application as any).activityId)}>取消</Button>}
+                      {isAdmin && application.status==='cancelled' && <Button size="xs" variant="outline" onClick={()=> window.location.href=`/apply/${(application as any).activityId}`}>重新编辑</Button>}
                     </div>
                   )}
-                  {isAdmin && (
+                  {(isAdmin || isReviewer) && (
                     <div className="flex flex-wrap gap-3 text-[11px] text-gray-600 mt-2">
                       <span>学业:{(application.calculatedScores?.academicScore||0).toFixed(2)}</span>
                       <span>专长:{(application.calculatedScores?.academicAchievementScore||0).toFixed(2)}</span>
@@ -198,6 +227,8 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
         })}
         {!loading && applications.length===0 && <div className="text-sm text-gray-500">暂无申请</div>}
       </div>
+      <ConfirmDialog open={!!pendingCancelId} onOpenChange={o=>{ if(!o) setPendingCancelId(null); }} title="确认取消申请" description={<div>取消后该记录状态将变为“已取消”，可重新发起新的申请草稿。<br/>确定继续？</div>} confirmText="确认取消" destructive onConfirm={confirmCancel} />
+      <InputDialog open={!!reopenDialogId} onOpenChange={o=>{ if(!o) setReopenDialogId(null); }} title="重新审核" placeholder="复核理由(可选)" confirmText="发起复核" onConfirm={(val)=> reopenDialogId && submitReopen(reopenDialogId, val)} />
     </div>
   );
 };

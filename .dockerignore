@@ -1,22 +1,26 @@
-# Global dockerignore
+# Reduce Docker build context size
 .git
 .gitignore
-**/.git
-**/.idea
-**/.vscode
-**/node_modules
-frontend/node_modules
-frontend/build
-frontend/dist
-# Maven / Gradle outputs
-**/target
+.idea
+*.iml
+**/.DS_Store
+
+# Maven build output
+/target
+
+# Frontend build caches/node modules
+/frontend/node_modules
+/frontend/dist
+/frontend/build
+
+# Local uploads (mounted as volume in compose)
+/uploads
+
 # Logs
-**/*.log
+*.log
+log/
+logs/
+
 # OS / editor
-.DS_Store
 Thumbs.db
-# Local uploads (mount as volume instead)
-uploads
-# Ignore docs (optional)
-doc
 

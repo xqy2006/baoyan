@@ -7,5 +7,6 @@ public enum ApplicationStatus {
     SYSTEM_REJECTED,
     ADMIN_REVIEWING,
     APPROVED,
-    REJECTED
+    REJECTED,
+    CANCELLED
 }

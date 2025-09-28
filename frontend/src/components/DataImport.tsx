@@ -11,6 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Upload, Download, FileSpreadsheet, CheckCircle, XCircle, AlertTriangle, Users, Pencil, Save as SaveIcon, X as CloseIcon, Key, RefreshCw, FileDown } from 'lucide-react';
 import { StudentBasicInfo } from '../App';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
+import { toast } from 'sonner';
+import { ConfirmDialog, InputDialog } from './ui/confirm-dialog';
 
 interface ImportResult {
   success: number;
@@ -74,6 +76,11 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
   // 错误/提示信息状态
   const [importError, setImportError] = useState('');
   const [importInfo, setImportInfo] = useState('');
+
+  // 删除用户确认
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<string|null>(null);
+  // 重置密码对话框
+  const [resetPwdUser, setResetPwdUser] = useState<string|null>(null);
 
   React.useEffect(() => {
     fetch('/api/users/me', { credentials:'include' })
@@ -282,19 +289,21 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
 
   const handleDeleteUser = async (studentId: string) => {
     setDeleteMsg('');
-    if (!window.confirm(`确定删除用户 ${studentId} ?`)) return;
+    setConfirmDeleteUser(studentId);
+  };
+  const doDeleteUser = async () => {
+    if(!confirmDeleteUser) return;
     try {
-      const res = await fetch(`/api/users/${studentId}`, { method:'DELETE', credentials:'include' });
+      const res = await fetch(`/api/users/${confirmDeleteUser}`, { method:'DELETE', credentials:'include' });
       const data = await res.json().catch(()=>({}));
       if (!res.ok) {
         setDeleteMsg(data.error || '删除失败');
+        toast.error(data.error || '删除失败');
       } else {
-        setDeleteMsg(`删除成功: ${studentId}`);
-        loadUsers();
+        const sid = confirmDeleteUser; setDeleteMsg(`删除成功: ${sid}`); toast.success(`已删除 ${sid}`); loadUsers();
       }
-    } catch (e:any) {
-      setDeleteMsg(e.message || '删除异常');
-    }
+    } catch (e:any) { setDeleteMsg(e.message || '删除异常'); toast.error(e.message||'删除异常'); }
+    finally { setConfirmDeleteUser(null); }
   };
 
   const startEdit = (u: any) => {
@@ -327,48 +336,43 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
       const res = await fetch(`/api/users/${studentId}/academic`, { method:'PATCH', credentials:'include', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json().catch(()=>({}));
       if (!res.ok) {
-        alert('更新失败: ' + (data.error || '未知错误'));
+        toast.error('更新失败: ' + (data.error || '未知错误'));
       } else {
-        // 更新本地 userList
-        setUserList(list => list.map(u => u.studentId === studentId ? { ...u, ...{
-          gpa: data.gpa, academicRank: data.academicRank, majorTotal: data.majorTotal,
-          name: data.name, department: data.department, major: data.major
-        }} : u));
+        setUserList(list => list.map(u => u.studentId === studentId ? { ...u, ...{ gpa: data.gpa, academicRank: data.academicRank, majorTotal: data.majorTotal, name: data.name, department: data.department, major: data.major }} : u));
+        toast.success('更新成功');
         cancelEdit();
       }
     } catch (e:any) {
-      alert('更新异常: ' + e.message);
-    } finally {
-      setSavingRow(null);
-    }
+      toast.error('更新异常: ' + e.message);
+    } finally { setSavingRow(null); }
   };
 
   const exportUsers = async () => {
     setExporting(true);
     try {
       const res = await fetch('/api/users/export', { credentials:'include' });
-      if (!res.ok) { alert('导出失败'); return; }
+      if (!res.ok) { toast.error('导出失败'); return; }
       const blob = await res.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'users_export.csv';
       a.click();
-    } catch (e:any) {
-      alert('导出异常: ' + e.message);
-    } finally {
-      setExporting(false);
-    }
+      toast.success('导出成功');
+    } catch (e:any) { toast.error('导出异常: ' + e.message); }
+    finally { setExporting(false); }
   };
 
   const resetPassword = async (studentId: string) => {
-    const p = window.prompt(`请输入 ${studentId} 新密码(至少4位):`);
-    if (p == null) return;
-    if (p.length < 4) { alert('长度不足'); return; }
+    setResetPwdUser(studentId);
+  };
+  const doResetPassword = async (pwd:string) => {
+    if(pwd.length < 4){ toast.error('长度不足'); return; }
     try {
-      const res = await fetch(`/api/users/${studentId}/reset-password`, { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ newPassword: p }) });
+      const res = await fetch(`/api/users/${resetPwdUser}/reset-password`, { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ newPassword: pwd }) });
       const data = await res.json().catch(()=>({}));
-      if (!res.ok) alert('重置失败: ' + (data.error || '')); else alert('重置成功');
-    } catch (e:any) { alert('重置异常: ' + e.message); }
+      if (!res.ok) toast.error('重置失败: ' + (data.error || '')); else toast.success('重置成功');
+    } catch (e:any) { toast.error('重置异常: ' + e.message); }
+    finally { setResetPwdUser(null); }
   };
 
   return (
@@ -718,6 +722,9 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <ConfirmDialog open={!!confirmDeleteUser} onOpenChange={o=>{ if(!o) setConfirmDeleteUser(null); }} title="确认删除用户" description={`将删除用户 ${confirmDeleteUser||''} ，该操作不可恢复。`} confirmText="删除" destructive onConfirm={doDeleteUser} />
+      <InputDialog open={!!resetPwdUser} onOpenChange={o=>{ if(!o) setResetPwdUser(null); }} title={`重置密码 - ${resetPwdUser||''}`} placeholder="输入新密码(至少4位)" confirmText="重置" type="password" onConfirm={doResetPassword} />
     </div>
   );
 };
