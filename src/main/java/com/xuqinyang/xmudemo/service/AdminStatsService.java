@@ -5,6 +5,7 @@ import com.xuqinyang.xmudemo.model.ApplicationStatus;
 import com.xuqinyang.xmudemo.repository.ApplicationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -15,6 +16,7 @@ public class AdminStatsService {
     @Autowired
     private ApplicationRepository applicationRepository;
 
+    @Transactional(readOnly = true)  // 添加事务支持
     public Map<String,Object> overall(){
         List<Application> all = applicationRepository.findAll();
         Map<ApplicationStatus, Long> byStatus = new EnumMap<>(ApplicationStatus.class);
@@ -37,13 +39,45 @@ public class AdminStatsService {
         return m;
     }
 
+    @Transactional(readOnly = true)  // 添加事务支持
     public List<Map<String,Object>> departmentStats(){
-        List<Application> all = applicationRepository.findAll();
+        List<Application> all = null;
+
+        // 首先尝试使用预加载查询
+        try {
+            all = applicationRepository.findAllWithUserAndActivity();
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to use eager loading query, falling back to regular query: " + e.getMessage());
+            // 降级处理：使用普通查询但确保在事务内
+            all = applicationRepository.findAll();
+        }
+
         Map<String, Map<String,Object>> agg = new LinkedHashMap<>();
         for (Application a: all){
-            String dept = a.getActivity()!=null? a.getActivity().getDepartment(): (a.getUser()!=null? a.getUser().getDepartment():"未填写");
-            if (dept==null || dept.isBlank()) dept = "未填写";
-            Map<String,Object> row = agg.computeIfAbsent(dept, k -> { Map<String,Object> r = new HashMap<>(); r.put("department", k); r.put("total", 0L); r.put("approved", 0L); return r;});
+            String dept = null;
+
+            try {
+                // 安全地访问懒加载关系
+                if (a.getActivity() != null) {
+                    dept = a.getActivity().getDepartment();
+                }
+                if ((dept == null || dept.isBlank()) && a.getUser() != null) {
+                    dept = a.getUser().getDepartment();
+                }
+            } catch (Exception e) {
+                // 如果懒加载失败，记录警告并使用默认值
+                System.err.println("Warning: Failed to load department info for application " + a.getId() + ": " + e.getMessage());
+                dept = "数据加载异常";
+            }
+
+            if (dept == null || dept.isBlank()) dept = "未填写";
+            Map<String,Object> row = agg.computeIfAbsent(dept, k -> {
+                Map<String,Object> r = new HashMap<>();
+                r.put("department", k);
+                r.put("total", 0L);
+                r.put("approved", 0L);
+                return r;
+            });
             row.put("total", (Long)row.get("total") + 1L);
             if (a.getStatus()==ApplicationStatus.APPROVED) {
                 row.put("approved", (Long)row.get("approved") + 1L);
@@ -52,4 +86,3 @@ public class AdminStatsService {
         return new ArrayList<>(agg.values());
     }
 }
-

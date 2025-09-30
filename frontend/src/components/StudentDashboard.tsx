@@ -102,47 +102,47 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
   },[user]);
 
   return (
-    <div className="p-4 space-y-6">
+    <div className="p-4 space-y-6 max-w-full">
       {/* 欢迎信息 */}
       <Card className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
-        <CardContent className="p-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-              <GraduationCap className="w-6 h-6" />
+        <CardContent className="p-4 sm:p-6">
+          <div className="flex items-center space-x-3 sm:space-x-4">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center flex-shrink-0">
+              <GraduationCap className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <h2 className="text-xl mb-1">厦门大学信息学院推免系统</h2>
-              <p className="text-blue-100">2025年推荐免试攻读研究生申请平台</p>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg sm:text-xl mb-1 break-words">厦门大学信息学院推免系统</h2>
+              <p className="text-blue-100 text-sm sm:text-base">2025年推荐免试攻读研究生申请平台</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                <FileText className="w-5 h-5 text-blue-600" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
               </div>
-              <div>
-                <p className="text-sm text-gray-600">我的申请</p>
-                <p className="text-2xl">{myStats.total}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-gray-600">我的申请</p>
+                <p className="text-lg sm:text-2xl font-semibold">{myStats.total}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-green-600" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
               </div>
-              <div>
-                <p className="text-sm text-gray-600">系统通过</p>
-                <p className="text-2xl">{myStats.systemApproved}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-gray-600">系统通过</p>
+                <p className="text-lg sm:text-2xl font-semibold">{myStats.systemApproved}</p>
               </div>
             </div>
           </CardContent>
@@ -337,3 +337,4 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
     </div>
   );
 };
+

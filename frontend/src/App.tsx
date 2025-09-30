@@ -14,6 +14,7 @@ import { ApplicationList } from './components/ApplicationList';
 import { ApplicationReview } from './components/ApplicationReview';
 import { ApplicationForm } from './components/ApplicationForm';
 import { Account } from './components/Account';
+import { NotFound } from './components/NotFound';
 import { User } from './context/AuthContext';
 import { Button } from './components/ui/button';
 import { useDeviceType } from './components/hooks/useDeviceType';
@@ -77,10 +78,10 @@ const Shell: React.FC<{children:React.ReactNode}> = ({ children }) => {
       <button
         onClick={()=>navigate(path)}
         aria-current={active? 'page':undefined}
-        className={`w-full flex items-center gap-2 h-9 px-3 rounded text-sm transition-colors ${active? 'bg-blue-600 text-white shadow':'text-gray-700 hover:bg-gray-100'}`}
+        className={`flex items-center gap-2 h-10 px-4 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${active? 'bg-blue-600 text-white shadow-sm':'text-gray-700 hover:bg-gray-100 hover:text-gray-900'}`}
       >
-        <Icon className="w-4 h-4" />
-        <span>{label}</span>
+        <Icon className="w-4 h-4 flex-shrink-0" />
+        <span className="hidden lg:inline">{label}</span>
       </button>
     );
   };
@@ -91,35 +92,54 @@ const Shell: React.FC<{children:React.ReactNode}> = ({ children }) => {
       <button
         onClick={()=>navigate(path)}
         aria-current={active? 'page':undefined}
-        className={`flex flex-col items-center space-y-1 h-auto py-2 px-2 min-w-[54px] rounded transition-colors ${active? 'text-blue-600':'text-gray-600 hover:text-gray-800'}`}
+        className={`flex flex-col items-center justify-center h-12 px-2 min-w-0 flex-1 rounded transition-colors ${active? 'text-blue-600 bg-blue-50':'text-gray-600 hover:text-gray-800 hover:bg-gray-50'}`}
       >
-        <Icon className="w-4 h-4" />
-        <span className="text-xs leading-none">{label}</span>
+        <Icon className="w-4 h-4 flex-shrink-0" />
+        <span className="text-xs leading-tight mt-1 truncate w-full">{label}</span>
       </button>
     );
   };
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <div className="flex flex-1 overflow-hidden">
-        {/* 桌面端侧边导航 */}
-        <aside className="hidden md:block w-56 bg-white border-r overflow-y-auto">
-          <div className="px-3 py-4 space-y-1" aria-label="Side Navigation">
-              {navItems.map(n=> <DesktopNavButton key={n.path} path={n.path} label={n.label(user)} Icon={n.icon} />)}
-              <div className="pt-4 text-[10px] text-gray-400 select-none">© {new Date().getFullYear()} XM U Demo</div>
+      {/* 桌面端顶部导航 */}
+      <header className="hidden md:block bg-white border-b shadow-sm sticky top-0 z-40">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-6">
+              <div className="flex-shrink-0">
+                <h1 className="text-xl font-bold text-gray-900 cursor-pointer" onClick={() => navigate('/')}>
+                  保研小助手
+                </h1>
+              </div>
+              <nav className="flex space-x-1" aria-label="Main Navigation">
+                {navItems.map(n=> <DesktopNavButton key={n.path} path={n.path} label={n.label(user)} Icon={n.icon} />)}
+              </nav>
+            </div>
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-gray-600">
+                {user.name || user.username}
+              </span>
+              <div className="text-xs text-gray-400">
+                © {new Date().getFullYear()} XMU Demo
+              </div>
+            </div>
           </div>
-        </aside>
+        </div>
+      </header>
 
-        {/* 主内容区 */}
-        <main
-          className="flex-1 overflow-y-auto px-2 md:px-4 py-4"
-          style={{ paddingBottom: device === 'mobile' ? `${navHeight + 16}px` : '32px' }}
-          role="main"
-        >
-          {children}
-        </main>
-      </div>
-
+      {/* 主内容区 */}
+      <main
+        className="flex-1 overflow-y-auto px-2 md:px-4 py-4"
+        style={{ paddingBottom: device === 'mobile' ? `${navHeight + 16}px` : '32px' }}
+        role="main"
+      >
+        <div className="max-w-screen-2xl mx-auto px-2 sm:px-4 lg:px-6">
+          <div className="min-w-0 w-full">
+            {children}
+          </div>
+        </div>
+      </main>
 
       {/* 移动端底部导航: 固定在底部 */}
       <nav
@@ -218,7 +238,7 @@ const App: React.FC = () => {
       <Route path="/import" element={<RequireAuth roles={['ADMIN']}><Shell><DataImport role={user?.role||'STUDENT'} /></Shell></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth roles={['ADMIN']}><Shell><SystemSettings/></Shell></RequireAuth>} />
       <Route path="/account" element={<RequireAuth><Shell><Account role={user?.role||'STUDENT'} /></Shell></RequireAuth>} />
-      <Route path="*" element={<Navigate to="/" replace/>} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 };

@@ -49,7 +49,7 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = () => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'SYSTEM_APPROVED': return <Badge className="bg-blue-100 text-blue-800">待管理员</Badge>;
-      case 'SYSTEM_REVIEWING': return <Badge className="bg-amber-100 text-amber-800">系统中</Badge>;
+      case 'SYSTEM_REVIEWING': return <Badge className="bg-amber-100 text-amber-800">系统审核中</Badge>;
       case 'ADMIN_REVIEWING': return <Badge className="bg-indigo-100 text-indigo-800">人工中</Badge>;
       case 'APPROVED': return <Badge className="bg-green-100 text-green-800">已通过</Badge>;
       case 'REJECTED': return <Badge className="bg-red-100 text-red-800">已拒绝</Badge>;

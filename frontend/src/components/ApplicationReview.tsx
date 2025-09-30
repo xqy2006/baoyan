@@ -107,8 +107,6 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
     finally { setIsSubmitting(false); }
   };
 
-  const handleSystemReview = () => call('system-review');
-  const handleStartAdmin = () => call('admin-start');
   const handleApprove = () => {
     if (!reviewComment) { setConfirmApproveOpen(true); return; }
     call('admin-review', { approve:true, comment: reviewComment });
@@ -168,30 +166,30 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-gray-600">姓名：</span>
-              <span>{appState.basicInfo.name}</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+            <div className="min-w-0">
+              <span className="text-gray-600 block sm:inline">姓名：</span>
+              <span className="block sm:inline font-medium break-words">{appState.basicInfo.name}</span>
             </div>
-            <div>
-              <span className="text-gray-600">学号：</span>
-              <span>{appState.basicInfo.studentId}</span>
+            <div className="min-w-0">
+              <span className="text-gray-600 block sm:inline">学号：</span>
+              <span className="block sm:inline font-medium break-words">{appState.basicInfo.studentId}</span>
             </div>
-            <div>
-              <span className="text-gray-600">系别：</span>
-              <span>{appState.basicInfo.department}</span>
+            <div className="min-w-0">
+              <span className="text-gray-600 block sm:inline">系别：</span>
+              <span className="block sm:inline font-medium break-words">{appState.basicInfo.department}</span>
             </div>
-            <div>
-              <span className="text-gray-600">专业：</span>
-              <span>{appState.basicInfo.major}</span>
+            <div className="min-w-0">
+              <span className="text-gray-600 block sm:inline">专业：</span>
+              <span className="block sm:inline font-medium break-words">{appState.basicInfo.major}</span>
             </div>
-            <div>
-              <span className="text-gray-600">GPA：</span>
-              <span className="text-blue-600">{appState.basicInfo.gpa}</span>
+            <div className="min-w-0">
+              <span className="text-gray-600 block sm:inline">GPA：</span>
+              <span className="block sm:inline text-blue-600 font-medium">{appState.basicInfo.gpa}</span>
             </div>
-            <div>
-              <span className="text-gray-600">学业排名：</span>
-              <span className="text-blue-600">
+            <div className="min-w-0">
+              <span className="text-gray-600 block sm:inline">学业排名：</span>
+              <span className="block sm:inline text-blue-600 font-medium">
                 {appState.basicInfo.academicRanking}/{appState.basicInfo.totalStudents}
               </span>
             </div>
@@ -199,36 +197,16 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
         </CardContent>
       </Card>
 
-      {/* 系统审核结果 */}
-      {appState.systemReviewComment && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <AlertTriangle className="w-5 h-5" />
-              <span>系统审核结果</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="bg-blue-50 p-3 rounded-lg">
-              <p className="text-sm text-blue-800">{appState.systemReviewComment}</p>
-              <p className="text-xs text-blue-600 mt-1">
-                审核时间：{appState.systemReviewedAt}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* 详细信息选项卡 */}
       <Card>
         <CardContent className="p-0">
           <Tabs defaultValue="scores" className="w-full">
             <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="scores">成绩计算</TabsTrigger>
-              <TabsTrigger value="language">外语成绩</TabsTrigger>
-              <TabsTrigger value="academic">学术专长</TabsTrigger>
-              <TabsTrigger value="comprehensive">综合表现</TabsTrigger>
-              <TabsTrigger value="files">材料证明</TabsTrigger>
+              <TabsTrigger value="scores" className="text-xs">成绩计算</TabsTrigger>
+              <TabsTrigger value="language" className="text-xs">外语成绩</TabsTrigger>
+              <TabsTrigger value="academic" className="text-xs">学术专长</TabsTrigger>
+              <TabsTrigger value="comprehensive" className="text-xs">综合表现</TabsTrigger>
+              <TabsTrigger value="files" className="text-xs">材料证明</TabsTrigger>
             </TabsList>
 
             {/* 成绩计算 */}
@@ -487,34 +465,43 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
                 const honors = (compPerf.honors || []);
                 const innovations = (academic.innovationProjects || []);
                 const transcripts = uf.transcripts || [];
-                const pubProofs = uf.publicationProofs || [];
-                const compProofs = uf.competitionProofs || [];
-                const patentProofs = uf.patentProofs || [];
-                const honorProofs = uf.honorProofs || [];
-                const innovationProofs = uf.innovationProofs || [];
 
-                // 通用获取匹配文件（通过 item.proofFileIds / proofFileId 或索引顺序）
-                const matchFiles = (item: any, arr: any[], index: number) => {
-                  if (!arr || arr.length === 0) return [];
-                  if (item?.proofFileIds && Array.isArray(item.proofFileIds)) {
-                    return item.proofFileIds.map((id: number) => arr.find(f => f.id === id)).filter(Boolean);
+                // 简化的文件获取函数 - 直接从item.proofFile获取
+                const getProofFiles = (item: any) => {
+                  const files = [];
+
+                  // 直接检查item.proofFile - 支持单个文件和文件数组
+                  if (item?.proofFile) {
+                    if (Array.isArray(item.proofFile)) {
+                      // 如果是数组，添加所有有效文件
+                      item.proofFile.forEach((file: any) => {
+                        if (file && file.id) {
+                          files.push(file);
+                        }
+                      });
+                    } else if (item.proofFile.id) {
+                      // 如果是单个文件对象
+                      files.push(item.proofFile);
+                    }
                   }
-                  if (item?.proofFileId) {
-                    const m = arr.find(f => f.id === item.proofFileId);
-                    if (m) return [m];
-                  }
-                  return [];
+
+                  return files;
                 };
 
                 // 简单缩略文件卡片
                 const FileThumb: React.FC<{file:any}> = ({ file }) => {
-                  if(!file) return null;
+                  if(!file || !file.id) return null;
                   const isImg = file.contentType?.startsWith('image/');
                   return (
                     <div className="border rounded p-2 bg-white shadow-sm" key={file.id}>
-                      <div className="text-[11px] text-gray-500 mb-1 break-all">{file.originalFilename || file.name}</div>
+                      <div className="text-[11px] text-gray-500 mb-1 break-all">{file.originalFilename || file.name || '附件'}</div>
                       {isImg ? (
-                        <img src={`/api/files/${file.id}/raw`} alt={file.originalFilename||'proof'} className="max-h-48 object-contain mx-auto" />
+                        <img
+                          src={`/api/files/${file.id}/raw`}
+                          alt={file.originalFilename || 'proof'}
+                          className="max-h-48 object-contain mx-auto cursor-pointer"
+                          onClick={() => viewFile(file.id)}
+                        />
                       ) : (
                         <div className="flex gap-2 flex-wrap text-[11px]">
                           <Button size="xs" variant="outline" onClick={()=>viewFile(file.id)}>查看</Button>
@@ -541,7 +528,7 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
                     </Section>
                     <Section title="论文发表">
                       {pubs.length? pubs.map((p:any,i:number)=>{
-                        const proofs = matchFiles(p,pubProofs,i);
+                        const proofs = getProofFiles(p);
                         return <div key={i} className="border rounded p-3 bg-gray-50 space-y-2">
                           <div className="text-sm font-medium break-all">{p.title||'（未填写标题）'}</div>
                           <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
@@ -552,14 +539,14 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
                             {p.score!=null && <span className="text-blue-600">加分:{p.score}</span>}
                           </div>
                           <div className="grid gap-3 md:grid-cols-3">
-                            {proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明</div>}
+                            {proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明材料</div>}
                           </div>
                         </div>;
                       }): Empty}
                     </Section>
                     <Section title="学科竞赛">
                       {comps.length? comps.map((c:any,i:number)=>{
-                        const proofs = matchFiles(c,compProofs,i);
+                        const proofs = getProofFiles(c);
                         return <div key={i} className="border rounded p-3 bg-gray-50 space-y-2">
                           <div className="text-sm font-medium break-all">{c.name||'（未填写名称）'}</div>
                           <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
@@ -570,14 +557,14 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
                             {c.score!=null && <span className="text-blue-600">加分:{c.score}</span>}
                           </div>
                           <div className="grid gap-3 md:grid-cols-3">
-                            {proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明</div>}
+                            {proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明材料</div>}
                           </div>
                         </div>;
                       }): Empty}
                     </Section>
                     <Section title="专利授权">
                       {pats.length? pats.map((p:any,i:number)=>{
-                        const proofs = matchFiles(p,patentProofs,i);
+                        const proofs = getProofFiles(p);
                         return <div key={i} className="border rounded p-3 bg-gray-50 space-y-2">
                           <div className="text-sm font-medium break-all">{p.title||'（未填写标题）'}</div>
                           <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
@@ -585,26 +572,26 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
                             <span>年份:{p.grantYear||'-'}</span>
                             {p.score!=null && <span className="text-blue-600">加分:{p.score}</span>}
                           </div>
-                          <div className="grid gap-3 md:grid-cols-3">{proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明</div>}</div>
+                          <div className="grid gap-3 md:grid-cols-3">{proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明材料</div>}</div>
                         </div>;
                       }): Empty}
                     </Section>
                     <Section title="荣誉称号">
                       {honors.length? honors.map((h:any,i:number)=>{
-                        const proofs = matchFiles(h,honorProofs,i);
+                        const proofs = getProofFiles(h);
                         return <div key={i} className="border rounded p-3 bg-gray-50 space-y-2">
                           <div className="text-sm font-medium break-all">{h.title||'（未填写）'}</div>
                           <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
                             <span>等级:{h.level||'-'}</span><span>年份:{h.year||'-'}</span>
                             {h.score!=null && <span className="text-blue-600">加分:{h.score}</span>}
                           </div>
-                          <div className="grid gap-3 md:grid-cols-3">{proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明</div>}</div>
+                          <div className="grid gap-3 md:grid-cols-3">{proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明材料</div>}</div>
                         </div>;
                       }): Empty}
                     </Section>
                     <Section title="科创 / 创新项目">
                       {innovations.length? innovations.map((ip:any,i:number)=>{
-                        const proofs = matchFiles(ip,innovationProofs,i);
+                        const proofs = getProofFiles(ip);
                         return <div key={i} className="border rounded p-3 bg-gray-50 space-y-2">
                           <div className="text-sm font-medium break-all">{ip.name||ip.title||'（未填写）'}</div>
                           <div className="text-[11px] text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
@@ -613,7 +600,7 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
                             {ip.year && <span>年份:{ip.year}</span>}
                             {ip.score!=null && <span className="text-blue-600">加分:{ip.score}</span>}
                           </div>
-                          <div className="grid gap-3 md:grid-cols-3">{proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明</div>}</div>
+                          <div className="grid gap-3 md:grid-cols-3">{proofs.length? proofs.map(f=> <FileThumb key={f.id} file={f} />): <div className="text-[11px] text-gray-400">无证明材料</div>}</div>
                         </div>;
                       }): Empty}
                     </Section>
@@ -641,15 +628,6 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
       </Card>
 
       {/* 审核操作 */}
-      { (isAdmin || isReviewer) && appState.status === 'system_approved' && (
-        <Card>
-          <CardHeader><CardTitle>进入人工审核</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="text-xs text-gray-500">当前申请已通过系统审核，点击进入人工审核后可进行通过/拒绝操作。</div>
-            <Button onClick={handleStartAdmin} disabled={isSubmitting || appState.status==='admin_reviewing'} size="sm">进入人工审核</Button>
-          </CardContent>
-        </Card>
-      )}
 
       {(isAdmin || isReviewer) && appState.status === 'admin_reviewing' && (
         <Card>

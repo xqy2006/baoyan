@@ -520,7 +520,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
       </div>
 
       <Card className="bg-blue-50 border-blue-200">
-        <CardContent className="p-4 grid grid-cols-4 gap-4 text-center text-xs md:text-sm">
+        <CardContent className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center text-xs md:text-sm">
           <div><p className="text-gray-600">学业(0-80)</p><p className="text-sm md:text-lg text-blue-600">{backendScores.academic.toFixed(2)}</p></div>
           <div><p className="text-gray-600">学术专长(0-15)</p><p className="text-sm md:text-lg text-indigo-600">{backendScores.specWeighted.toFixed(2)}</p></div>
           <div><p className="text-gray-600">综合表现(0-5)</p><p className="text-sm md:text-lg text-green-600">{backendScores.perfWeighted.toFixed(2)}</p></div>
@@ -532,12 +532,12 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
         <fieldset disabled={!isEditable} className={isEditable? '' : 'opacity-80 pointer-events-none'}>
           {/* 基本信息 */}
           <Card><CardHeader><CardTitle className="flex items-center space-x-2"><UserIcon className="w-5 h-5" /><span>基本信息</span></CardTitle></CardHeader><CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4"><div><Label>姓名</Label><Input value={basicInfo.name} disabled /></div><div><Label>学号</Label><Input value={basicInfo.studentId} disabled /></div></div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><Label>姓名</Label><Input value={basicInfo.name} disabled /></div><div><Label>学号</Label><Input value={basicInfo.studentId} disabled /></div></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><Label>系别</Label><Input value={basicInfo.department} onChange={e=>handleBasicChange('department', e.target.value)} /></div>
               <div><Label>专业</Label><Input value={basicInfo.major} onChange={e=>handleBasicChange('major', e.target.value)} /></div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div><Label>GPA</Label><Input value={basicInfo.gpa} onChange={e=>handleBasicChange('gpa', e.target.value)} /></div>
               <div><Label>学业排名</Label><Input value={basicInfo.academicRanking} onChange={e=>handleBasicChange('academicRanking', e.target.value)} /></div>
               <div><Label>专业总人数</Label><Input value={basicInfo.totalStudents} onChange={e=>handleBasicChange('totalStudents', e.target.value)} /></div>
@@ -672,15 +672,20 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
           </Card>)}</CardContent></Card>
 
           {/* 荣誉称号 */}
-          <Card><CardHeader><CardTitle className="flex items-center justify-between"><span className="flex items-center space-x-2"><Award className="w-5 h-5" /><span>荣誉称号 (可选)</span></span><Button type="button" size="sm" onClick={()=>{setHonors(h=>[...h,{ title:'', level:'国家级', year:new Date().getFullYear(), isCollective:false, proofFile:null }]); markDirty();}}><Plus className="w-4 h-4" /></Button></CardTitle></CardHeader><CardContent className="space-y-3">{honors.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}{honors.map((h,i)=> <div key={i} className="grid md:grid-cols-7 grid-cols-3 gap-2 items-end p-3 border rounded">
-            <div><Label className="text-[11px]">荣誉名称</Label><Input value={h.title} onChange={e=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,title:e.target.value}:x)); markDirty();}} placeholder="如: 三好学生" /></div>
-            <div><Label className="text-[11px]">等级</Label><Select value={h.level} onValueChange={v=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,level:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="国家级">国家级</SelectItem><SelectItem value="省级">省级</SelectItem><SelectItem value="校级">校级</SelectItem></SelectContent></Select></div>
-            <div><Label className="text-[11px]">年份</Label><Input type="number" value={h.year} onChange={e=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,year:+e.target.value}:x)); markDirty();}} /></div>
-            <div className="flex items-center gap-2 mt-5"><Checkbox checked={h.isCollective} onCheckedChange={v=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,isCollective:!!v}:x)); markDirty();}} /><Label className="text-[11px] m-0">集体</Label></div>
-            <div className="col-span-2 md:col-span-1"><Label className="text-[11px]">证明</Label><ProofFileUploader meta={h.proofFile as any} applicationId={applicationId} disabled={!isEditable} onChange={(m)=>{ setHonors(list=> list.map((x,idx)=> idx===i? { ...x, proofFile: m as any }: x)); markDirty(); }} /></div>
-            <Button type="button" size="sm" variant="destructive" onClick={()=>{setHonors(s=>s.filter((_,idx)=>idx!==i)); markDirty();}}>删</Button>
-            {i===honors.length-1 && <Button type="button" size="sm" onClick={()=>{setHonors(s=>[...s,{ title:'', level:'国家级', year:new Date().getFullYear(), isCollective:false, proofFile:null }]);}}>+</Button>}
-          </div>)}</CardContent></Card>
+          <Card><CardHeader><CardTitle className="flex items-center justify-between"><span className="flex items-center space-x-2"><Award className="w-5 h-5" /><span>荣誉称号 (可选)</span></span><Button type="button" size="sm" onClick={()=>{setHonors(h=>[...h,{ title:'', level:'国家级', year:new Date().getFullYear(), isCollective:false, proofFile:null }]); markDirty();}}><Plus className="w-4 h-4" /></Button></CardTitle></CardHeader><CardContent className="space-y-3">{honors.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}{honors.map((h,i)=> <div key={i} className="p-3 border rounded space-y-3">
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div><Label className="text-xs">荣誉名称</Label><Input value={h.title} onChange={e=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,title:e.target.value}:x)); markDirty();}} placeholder="如: 三好学生" /></div>
+    <div><Label className="text-xs">等级</Label><Select value={h.level} onValueChange={v=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,level:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="国家级">国家级</SelectItem><SelectItem value="省级">省级</SelectItem><SelectItem value="校级">校级</SelectItem></SelectContent></Select></div>
+  </div>
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+    <div><Label className="text-xs">年份</Label><Input type="number" value={h.year} onChange={e=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,year:+e.target.value}:x)); markDirty();}} /></div>
+    <div className="flex items-center gap-2"><Checkbox checked={h.isCollective} onCheckedChange={v=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,isCollective:!!v}:x)); markDirty();}} /><Label className="text-xs m-0">集体荣誉</Label></div>
+    <div className="flex gap-2">
+      <Button type="button" size="sm" variant="destructive" onClick={()=>{setHonors(s=>s.filter((_,idx)=>idx!==i)); markDirty();}}>删除</Button>
+    </div>
+  </div>
+  <div><Label className="text-xs">证明材料</Label><ProofFileUploader meta={h.proofFile as any} applicationId={applicationId} disabled={!isEditable} onChange={(m)=>{ setHonors(list=> list.map((x,idx)=> idx===i? { ...x, proofFile: m as any }: x)); markDirty(); }} /></div>
+</div>)}</CardContent></Card>
 
           {/* 体育比赛 */}
           <Card><CardHeader><CardTitle className="flex items-center space-x-2"><Trophy className="w-5 h-5" /><span>体育比赛 (可选)</span></CardTitle></CardHeader><CardContent className="space-y-3">{sports.length===0 && <div className="text-xs text-gray-500">暂无记录，点击下方添加</div>}{sports.map((sp,i)=> <Card key={sp.id} className="p-4 space-y-3">

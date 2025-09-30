@@ -1,6 +1,7 @@
 package com.xuqinyang.xmudemo.model;
 
 import jakarta.persistence.*;
+import java.util.HashSet;
 import java.util.Set;
 
 @Entity
@@ -63,6 +64,46 @@ public class User {
 
     public void setRoles(Set<Role> roles) {
         this.roles = roles;
+    }
+
+    // 便利方法：获取主要角色（兼容现有代码）
+    public Role getRole() {
+        if (roles == null || roles.isEmpty()) {
+            return Role.STUDENT; // 默认角色
+        }
+        // 按优先级返回：ADMIN > REVIEWER > STUDENT
+        if (roles.contains(Role.ADMIN)) return Role.ADMIN;
+        if (roles.contains(Role.REVIEWER)) return Role.REVIEWER;
+        return Role.STUDENT;
+    }
+
+    // 便利方法：设置主要角色（兼容现有代码）
+    public void setRole(Role role) {
+        if (this.roles == null) {
+            this.roles = new HashSet<>();
+        }
+        this.roles.clear();
+        this.roles.add(role);
+    }
+
+    // 检查是否拥有某个角色
+    public boolean hasRole(Role role) {
+        return roles != null && roles.contains(role);
+    }
+
+    // 添加角色
+    public void addRole(Role role) {
+        if (this.roles == null) {
+            this.roles = new HashSet<>();
+        }
+        this.roles.add(role);
+    }
+
+    // 移除角色
+    public void removeRole(Role role) {
+        if (this.roles != null) {
+            this.roles.remove(role);
+        }
     }
 
     public String getName() {

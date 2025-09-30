@@ -75,7 +75,7 @@ export const Navigation: React.FC<NavigationProps> = ({ user, currentView, onVie
             <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-white to-transparent z-10" />
             <div className="h-full overflow-y-auto px-3 py-4 space-y-1" id="desktop-nav-scroll">
               <DesktopButton view="dashboard" label="首页" icon={<Home className="w-4 h-4" />} show/>
-              <DesktopButton view="applications" label={isStudent? '申请' : (isAdmin? '审核管理':'审核')} icon={<FileText className="w-4 h-4" />} show={isStudent || isAdmin || isReviewer} />
+              <DesktopButton view="applications" label={isStudent? '申请' : (isAdmin? '审核管理':'审核')} icon={<FileText className="w-4 h-4" />} show={isStudent || isReviewer} />
               <DesktopButton view="activities" label="活动" icon={<Activity className="w-4 h-4" />} show={isAdmin} />
               <DesktopButton view="import" label="用户" icon={<Upload className="w-4 h-4" />} show={isAdmin} />
               <DesktopButton view="settings" label="设置" icon={<Settings className="w-4 h-4" />} show={isAdmin} />

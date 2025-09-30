@@ -30,7 +30,7 @@ export const Login: React.FC = () => {
             <GraduationCap className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl mb-2">厦门大学信息学院推免系统</h1>
-          <p className="text-gray-600 text-sm">2025年推荐免试攻读研究生申请平台</p>
+          <p className="text-gray-600 text-sm">推荐免试攻读研究生申请平台</p>
         </div>
 
         <Card>
@@ -50,7 +50,6 @@ export const Login: React.FC = () => {
               {error && <div className="text-red-500 text-sm">{error}</div>}
               <Button type="submit" className="w-full" disabled={loading}>{loading? '登录中...' : '登录'}</Button>
               <div className="text-xs text-gray-500 text-center leading-relaxed pt-2">
-                初次导入账户的初始密码即为导入文件“密码”列内容（模板示例：Init@123）。登录后请尽快在“账户”页面修改密码。
               </div>
             </form>
           </CardContent>

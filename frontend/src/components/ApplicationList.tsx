@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -26,6 +27,7 @@ const statusMap: Record<string,string> = {
 };
 
 export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview }) => {
+  const navigate = useNavigate();
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -44,7 +46,7 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
       studentId: a.userStudentId || basic.studentId || '未知',
       studentName: basic.name || a.userStudentId || '未知',
       activityId: String(a.activityId || ''),
-      activityName: a.activityName || '活动',
+      activityName: a.activityName || a.activity?.name || '未知活动',
       status: (statusMap[a.status] || 'pending') as Application['status'],
       submittedAt: a.submittedAt || '-',
       systemReviewedAt: a.systemReviewedAt || undefined,
@@ -95,7 +97,6 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
   };
 
   const handleSystemReview = (id:string)=> action(id,'system-review').catch(e=>toast.error(e.message));
-  const handleStartAdmin = (id:string)=> action(id,'admin-start').catch(e=>toast.error(e.message));
   const handleAdminApprove = (id:string)=> action(id,'admin-review', { approve:true, comment: reviewComments[id]||'' }).catch(e=>toast.error(e.message));
   const handleAdminReject = (id:string)=> {
     const rc = reviewComments[id]||'';
@@ -182,15 +183,14 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
                       {isStudent && application.status!=='cancelled' && application.status!=='approved' && (
                         <Button size="sm" variant="destructive" onClick={()=>handleCancel(application.id)}>取消</Button>
                       )}
-                      {isStudent && application.status==='cancelled' && (
-                        <Button size="sm" variant="outline" onClick={()=> window.location.href = `/apply/${(application as any).activityId}`}>重新编辑</Button>
+                      {isStudent && application.status==='cancelled' && application.activityId && (
+                        <Button size="sm" variant="outline" onClick={()=> navigate(`/apply/${application.activityId}`)}>重新编辑</Button>
                       )}
                     </div>
                   </div>
                   {(isAdmin || isReviewer) && (
                     <div className="flex items-center gap-2 flex-wrap">
                       {application.status==='system_reviewing' && <Button size="xs" variant="outline" onClick={()=>handleSystemReview(application.id)}>系统审核</Button>}
-                      {application.status==='system_approved' && <Button size="xs" variant="outline" onClick={()=>handleStartAdmin(application.id)}>进入人工审核</Button>}
                       {application.status==='admin_reviewing' && (
                         <>
                           <Input placeholder="审核意见(拒绝必填)" value={reviewComments[application.id]||''} onChange={e=> setReviewComments(m=>({...m,[application.id]:e.target.value}))} className="h-8 w-52" />
@@ -209,7 +209,7 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
                         </>
                       )}
                       {isAdmin && application.status!=='approved' && application.status!=='cancelled' && application.status!=='admin_reviewing' && application.status!=='system_reviewing' && application.status!=='system_approved' && application.status!=='rejected' && <Button size="xs" variant="outline" onClick={()=>handleCancel(application.id, (application as any).activityId)}>取消</Button>}
-                      {isAdmin && application.status==='cancelled' && <Button size="xs" variant="outline" onClick={()=> window.location.href=`/apply/${(application as any).activityId}`}>重新编辑</Button>}
+                      {isAdmin && application.status==='cancelled' && application.activityId && <Button size="xs" variant="outline" onClick={()=> navigate(`/apply/${application.activityId}`)}>重新编辑</Button>}
                     </div>
                   )}
                   {(isAdmin || isReviewer) && (

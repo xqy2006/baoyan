@@ -17,8 +17,13 @@ public class ActivityController {
     @Autowired
     private ActivityService activityService;
 
+    // Return only active activities for student-facing pages
     @GetMapping("/active")
     public List<Activity> active(){ return activityService.listActive(); }
+
+    // New: return all activities including inactive ones (for admin or UI that needs full list)
+    @GetMapping("/all")
+    public List<Activity> allActivities(){ return activityService.listAll(); }
 
     @GetMapping
     public List<Activity> all(){ return activityService.listAll(); }
@@ -52,4 +57,3 @@ public class ActivityController {
         catch (Exception e){ return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
     }
 }
-

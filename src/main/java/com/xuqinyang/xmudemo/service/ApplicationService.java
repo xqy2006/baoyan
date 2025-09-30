@@ -11,10 +11,13 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,41 +38,135 @@ public class ApplicationService {
     private UserRepository userRepository;
     @Autowired
     private FileService fileService;
+    @Autowired
+    private DistributedLockService distributedLockService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    @Cacheable(value = "applications", key = "'all'")
     public List<Application> getAllApplications() { return applicationRepository.findAll(); }
-    public Optional<Application> getApplicationById(Long id) { return applicationRepository.findById(id); }
-    public List<Application> getApplicationsByUserId(Long userId) { return applicationRepository.findByUser_Id(userId); }
-    public Application createApplication(Application application) { return applicationRepository.save(application); }
-    public Application updateApplication(Application application) { return applicationRepository.save(application); }
-    public void deleteApplication(Long id) { applicationRepository.deleteById(id); }
 
+    @Cacheable(value = "applications", key = "#id")
+    @Transactional(readOnly = true)  // 添加事务支持确保懒加载工作正常
+    public Optional<Application> getApplicationById(Long id) {
+        // 使用预加载user和activity关系的查询方法
+        Optional<Application> result = applicationRepository.findByIdWithUserAndActivity(id);
+
+        // 如果预加载查询失败或用户信息为空，尝试使用原生查询验证
+        if (result.isPresent()) {
+            Application app = result.get();
+            // 确保懒加载的关系被初始化
+            try {
+                if (app.getUser() != null) {
+                    app.getUser().getStudentId(); // 触发User的加载
+                }
+                if (app.getActivity() != null) {
+                    app.getActivity().getName(); // 触发Activity的加载
+                }
+
+                // 验证用户信息是否正确加载
+                if (app.getUser() == null || app.getUser().getStudentId() == null) {
+                    System.err.println("Warning: User information not properly loaded for application " + id + ", trying native query fallback");
+
+                    // 使用原生查询验证数据库中确实存在用户信息
+                    Optional<Object[]> nativeResult = applicationRepository.findApplicationWithUserByIdNative(id);
+                    if (nativeResult.isPresent()) {
+                        Object[] row = nativeResult.get();
+                        System.err.println("Native query confirms user exists: student_id=" + row[row.length-5]); // student_id should be at this position
+
+                        // 强制重新查询不使用缓存
+                        result = applicationRepository.findById(id);
+                        if (result.isPresent()) {
+                            app = result.get();
+                            // 手动触发关系加载
+                            if (app.getUser() != null) {
+                                app.getUser().getStudentId();
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // 如果懒加载失败，记录警告但不抛出异常
+                System.err.println("Warning: Failed to initialize lazy relationships for application " + id + ": " + e.getMessage());
+
+                // 尝试原生查询fallback
+                try {
+                    Optional<Object[]> nativeResult = applicationRepository.findApplicationWithUserByIdNative(id);
+                    if (nativeResult.isPresent()) {
+                        Object[] row = nativeResult.get();
+                        System.err.println("Native query fallback: student_id=" + row[row.length-5]);
+
+                        // 尝试重新从数据库获取
+                        result = applicationRepository.findById(id);
+                        if (result.isPresent()) {
+                            app = result.get();
+                        }
+                    }
+                } catch (Exception fallbackException) {
+                    System.err.println("Native query fallback also failed: " + fallbackException.getMessage());
+                }
+            }
+        }
+
+        return result;
+    }
+
+    @Cacheable(value = "applications", key = "'user_' + #userId")
+    public List<Application> getApplicationsByUserId(Long userId) { return applicationRepository.findByUser_Id(userId); }
+
+    @Transactional
+    @CacheEvict(value = "applications", allEntries = true)
+    public Application createApplication(Application application) {
+        return distributedLockService.executeWithLockAndRetry("application:create:" + application.getUser().getId(),
+            () -> applicationRepository.save(application), 5);
+    }
+
+    @Transactional
+    @CacheEvict(value = "applications", key = "#application.id")
+    public Application updateApplication(Application application) {
+        return distributedLockService.executeWithLockAndRetry("application:update:" + application.getId(),
+            () -> applicationRepository.save(application), 5);
+    }
+
+    @Transactional
+    @CacheEvict(value = "applications", key = "#id")
+    public void deleteApplication(Long id) {
+        distributedLockService.executeWithLockAndRetry("application:delete:" + id,
+            () -> {
+                applicationRepository.deleteById(id);
+                return null;
+            }, 3);
+    }
+
+    @Transactional
+    @CacheEvict(value = "applications", allEntries = true)
     public Application createDraft(Long activityId, String content) {
         User user = currentUserEntity();
-        Optional<Application> existing = applicationRepository.findByUser_IdAndActivity_Id(user.getId(), activityId);
-        if (existing.isPresent()) {
-            Application ex = existing.get();
-            if (ex.getStatus()==ApplicationStatus.CANCELLED || ex.getStatus()==ApplicationStatus.REJECTED || ex.getStatus()==ApplicationStatus.SYSTEM_REJECTED) {
-                // 重新激活为草稿
-                ex.setStatus(ApplicationStatus.DRAFT);
-                ex.setSubmittedAt(null);
-                ex.setSystemReviewedAt(null);
-                ex.setAdminReviewedAt(null);
-                ex.setSystemReviewComment(null);
-                ex.setAdminReviewComment(null);
-                return applicationRepository.save(ex);
+        return distributedLockService.executeWithLockAndRetry("draft:create:" + user.getId() + ":" + activityId, () -> {
+            Optional<Application> existing = applicationRepository.findByUser_IdAndActivity_Id(user.getId(), activityId);
+            if (existing.isPresent()) {
+                Application ex = existing.get();
+                if (ex.getStatus()==ApplicationStatus.CANCELLED || ex.getStatus()==ApplicationStatus.REJECTED || ex.getStatus()==ApplicationStatus.SYSTEM_REJECTED) {
+                    // 重新激活为草稿
+                    ex.setStatus(ApplicationStatus.DRAFT);
+                    ex.setSubmittedAt(null);
+                    ex.setSystemReviewedAt(null);
+                    ex.setAdminReviewedAt(null);
+                    ex.setSystemReviewComment(null);
+                    ex.setAdminReviewComment(null);
+                    return applicationRepository.save(ex);
+                }
+                return ex;
             }
-            return ex;
-        }
-        Activity activity = activityRepository.findById(activityId)
-                .orElseThrow(() -> new IllegalArgumentException("活动不存在"));
-        Application app = new Application();
-        app.setUser(user);
-        app.setActivity(activity);
-        app.setContent(content);
-        app.setStatus(ApplicationStatus.DRAFT);
-        return applicationRepository.save(app);
+            Activity activity = activityRepository.findById(activityId)
+                    .orElseThrow(() -> new IllegalArgumentException("活动不存在"));
+            Application app = new Application();
+            app.setUser(user);
+            app.setActivity(activity);
+            app.setContent(content);
+            app.setStatus(ApplicationStatus.DRAFT);
+            return applicationRepository.save(app);
+        }, 5);
     }
 
     public Optional<Application> findMineByActivity(Long activityId){
@@ -77,109 +174,145 @@ public class ApplicationService {
         return applicationRepository.findByUser_IdAndActivity_Id(user.getId(), activityId);
     }
 
+    @Transactional
     public void deleteOwnedOrAdmin(Long id){
-        Application app = applicationRepository.findById(id).orElseThrow();
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        boolean admin = auth.getAuthorities().contains(new SimpleGrantedAuthority("ADMIN"));
-        if (!admin) {
-            User me = currentUserEntity();
-            if (!app.getUser().getId().equals(me.getId())) {
-                throw new IllegalStateException("无权删除此申请");
+        distributedLockService.executeWithLockAndRetry("application:deleteOwned:" + id, () -> {
+            Application app = applicationRepository.findById(id).orElseThrow();
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            boolean admin = auth.getAuthorities().contains(new SimpleGrantedAuthority("ADMIN"));
+            if (!admin) {
+                User me = currentUserEntity();
+                if (!app.getUser().getId().equals(me.getId())) {
+                    throw new IllegalStateException("无权删除此申请");
+                }
+                // 学生可以删除 草稿 或 已提交待系统审核 的申请
+                if (app.getStatus() != ApplicationStatus.DRAFT && app.getStatus() != ApplicationStatus.SYSTEM_REVIEWING) {
+                    throw new IllegalStateException("该状态不允许删除");
+                }
             }
-            // 学生可以删除 草稿 或 已提交待系统审核 的申请
-            if (app.getStatus() != ApplicationStatus.DRAFT && app.getStatus() != ApplicationStatus.SYSTEM_REVIEWING) {
-                throw new IllegalStateException("该状态不允许删除");
-            }
-        }
-        applicationRepository.delete(app);
+            applicationRepository.delete(app);
+            return null;
+        }, 3);
     }
 
     public List<Application> listMine() {
         User user = currentUserEntity();
-        return applicationRepository.findByUser_Id(user.getId());
+        // Use preloading query to ensure activity is loaded to avoid lazy initialization when serializing
+        try {
+            return applicationRepository.findByUser_IdWithActivity(user.getId());
+        } catch (Exception e) {
+            // fallback to safer simple query
+            return applicationRepository.findByUser_Id(user.getId());
+        }
     }
 
+    @Transactional
+    @CacheEvict(value = "applications", key = "#id")
     public Application updateDraft(Long id, String content) {
-        Application app = owned(id);
-        if (app.getStatus() != ApplicationStatus.DRAFT) {
-            throw new IllegalStateException("只能在草稿状态修改");
-        }
-        String merged = mergeContent(app.getContent(), content);
-        app.setContent(merged);
-        recalcScores(app);
-        app.setLastUpdateDate(java.time.LocalDateTime.now());
-        return applicationRepository.save(app);
+        return distributedLockService.executeWithLockAndRetry("application:updateDraft:" + id, () -> {
+            Application app = owned(id);
+            if (app.getStatus() != ApplicationStatus.DRAFT) {
+                throw new IllegalStateException("只能在草稿状态修改");
+            }
+            String merged = mergeContent(app.getContent(), content);
+            app.setContent(merged);
+            recalcScores(app);
+            app.setLastUpdateDate(java.time.LocalDateTime.now());
+            return applicationRepository.save(app);
+        }, 5);
     }
 
+    @Transactional
+    @CacheEvict(value = "applications", key = "#id")
     public Application submit(Long id) {
-        Application app = owned(id);
-        if (app.getStatus() != ApplicationStatus.DRAFT) {
-            throw new IllegalStateException("当前状态不能提交");
-        }
-        JsonNode root = parseContent(app.getContent());
-        if(root.path("basicInfo").isMissingNode() || !root.path("basicInfo").has("name")){
-            var o = root.isObject()? (com.fasterxml.jackson.databind.node.ObjectNode) root : MAPPER.createObjectNode();
-            var basic = MAPPER.createObjectNode();
-            User u = app.getUser();
-            basic.put("name", Optional.ofNullable(u.getName()).orElse(""));
-            basic.put("studentId", u.getStudentId());
-            basic.put("department", Optional.ofNullable(u.getDepartment()).orElse(""));
-            basic.put("major", Optional.ofNullable(u.getMajor()).orElse(""));
-            o.set("basicInfo", basic);
-            try { app.setContent(MAPPER.writeValueAsString(o)); } catch(Exception ignored){}
-        }
-        recalcScores(app);
-        // 直接视为系统审核通过
-        app.setStatus(ApplicationStatus.SYSTEM_APPROVED);
-        app.setSubmittedAt(LocalDateTime.now());
-        app.setSystemReviewedAt(LocalDateTime.now());
-        app.setSystemReviewComment(null); // 置空
-        return applicationRepository.save(app);
+        return distributedLockService.executeWithLockAndRetry("application:submit:" + id, () -> {
+            Application app = owned(id);
+            if (app.getStatus() != ApplicationStatus.DRAFT) {
+                throw new IllegalStateException("当前状态不能提交");
+            }
+            JsonNode root = parseContent(app.getContent());
+            if(root.path("basicInfo").isMissingNode() || !root.path("basicInfo").has("name")){
+                var o = root.isObject()? (com.fasterxml.jackson.databind.node.ObjectNode) root : MAPPER.createObjectNode();
+                var basic = MAPPER.createObjectNode();
+                User u = app.getUser();
+                basic.put("name", Optional.ofNullable(u.getName()).orElse(""));
+                basic.put("studentId", u.getStudentId());
+                basic.put("department", Optional.ofNullable(u.getDepartment()).orElse(""));
+                basic.put("major", Optional.ofNullable(u.getMajor()).orElse(""));
+                o.set("basicInfo", basic);
+                try { app.setContent(MAPPER.writeValueAsString(o)); } catch(Exception ignored){}
+            }
+            recalcScores(app);
+
+            // 修复：提交后进入系统审核状态，而不是直接通过
+            app.setStatus(ApplicationStatus.SYSTEM_REVIEWING);
+            app.setSubmittedAt(LocalDateTime.now());
+            // 清空之前的审核信息
+            app.setSystemReviewedAt(null);
+            app.setSystemReviewComment(null);
+            app.setAdminReviewedAt(null);
+            app.setAdminReviewComment(null);
+
+            return applicationRepository.save(app);
+        }, 5);
     }
 
+    @Transactional
+    @CacheEvict(value = "applications", key = "#id")
     public Application systemReview(Long id) {
-        ensureAdminOrReviewer();
-        Application app = applicationRepository.findById(id).orElseThrow();
-        if (app.getStatus() != ApplicationStatus.SYSTEM_REVIEWING) {
-            throw new IllegalStateException("非系统审核中");
-        }
-        recalcScores(app); // compute scores from content (academic based on GPA/rank)
-        double academic = app.getAcademicScore()==null?0: app.getAcademicScore();
-        if (academic >= 48) {
-            app.setStatus(ApplicationStatus.SYSTEM_APPROVED);
-            app.setSystemReviewComment("系统初审通过，学业得分=" + academic);
-        } else {
-            app.setStatus(ApplicationStatus.SYSTEM_REJECTED);
-            app.setSystemReviewComment("系统初审不通过，学业得分=" + academic);
-        }
-        app.setSystemReviewedAt(LocalDateTime.now());
-        return applicationRepository.save(app);
+        return distributedLockService.executeWithLockAndRetry("application:systemReview:" + id, () -> {
+            ensureAdminOrReviewer();
+            Application app = applicationRepository.findById(id).orElseThrow();
+            if (app.getStatus() != ApplicationStatus.SYSTEM_REVIEWING) {
+                throw new IllegalStateException("非系统审核中");
+            }
+            recalcScores(app); // compute scores from content (academic based on GPA/rank)
+            double academic = app.getAcademicScore()==null?0: app.getAcademicScore();
+            if (academic >= 48) {
+                // 直接进入人工审核状态，而不是停留在system_approved
+                app.setStatus(ApplicationStatus.ADMIN_REVIEWING);
+                app.setSystemReviewComment("系统初审通过，学业得分=" + academic + "，已进入人工审核");
+            } else {
+                app.setStatus(ApplicationStatus.SYSTEM_REJECTED);
+                app.setSystemReviewComment("系统初审不通过，学业得分=" + academic);
+            }
+            app.setSystemReviewedAt(LocalDateTime.now());
+            return applicationRepository.save(app);
+        }, 5);
     }
 
+    @Transactional
+    @CacheEvict(value = "applications", key = "#id")
     public Application startAdminReview(Long id) {
-        ensureAdminOrReviewer();
-        Application app = applicationRepository.findById(id).orElseThrow();
-        if (app.getStatus() != ApplicationStatus.SYSTEM_APPROVED) {
-            throw new IllegalStateException("必须是系统通过状态");
-        }
-        app.setStatus(ApplicationStatus.ADMIN_REVIEWING);
-        return applicationRepository.save(app);
+        return distributedLockService.executeWithLockAndRetry("application:startAdminReview:" + id, () -> {
+            ensureAdminOrReviewer();
+            Application app = applicationRepository.findById(id).orElseThrow();
+            if (app.getStatus() != ApplicationStatus.SYSTEM_APPROVED) {
+                throw new IllegalStateException("必须是系统通过状态");
+            }
+            app.setStatus(ApplicationStatus.ADMIN_REVIEWING);
+            return applicationRepository.save(app);
+        }, 5);
     }
 
+    @Transactional
+    @CacheEvict(value = "applications", key = "#id")
     public Application adminReview(Long id, boolean approve, String comment) {
-        ensureAdminOrReviewer();
-        Application app = applicationRepository.findById(id).orElseThrow();
-        if (app.getStatus() != ApplicationStatus.ADMIN_REVIEWING) {
-            throw new IllegalStateException("非人工审核中");
-        }
-        if(!approve && (comment==null || comment.isBlank())){
-            throw new IllegalStateException("拒绝操作必须填写审核意见");
-        }
-        recalcScores(app); // ensure latest scores
-        app.setStatus(approve ? ApplicationStatus.APPROVED : ApplicationStatus.REJECTED);
-        app.setAdminReviewComment(comment);
-        app.setAdminReviewedAt(LocalDateTime.now());
-        return applicationRepository.save(app);
+        return distributedLockService.executeWithLockAndRetry("application:adminReview:" + id, () -> {
+            ensureAdminOrReviewer();
+            Application app = applicationRepository.findById(id).orElseThrow();
+            if (app.getStatus() != ApplicationStatus.ADMIN_REVIEWING) {
+                throw new IllegalStateException("非人工审核中");
+            }
+            if(!approve && (comment==null || comment.isBlank())){
+                throw new IllegalStateException("拒绝操作必须填写审核意见");
+            }
+            recalcScores(app); // ensure latest scores
+            app.setStatus(approve ? ApplicationStatus.APPROVED : ApplicationStatus.REJECTED);
+            app.setAdminReviewComment(comment);
+            app.setAdminReviewedAt(LocalDateTime.now());
+            return applicationRepository.save(app);
+        }, 5);
     }
 
     public List<Application> reviewQueue() {
@@ -193,38 +326,60 @@ public class ApplicationService {
         ));
     }
 
+    @Transactional
+    @CacheEvict(value = "applications", key = "#id")
     public Application specialTalentPass(Long id){
-        Application app = applicationRepository.findById(id).orElseThrow();
-        // Update content JSON: set specialAcademicTalent.defensePassed = true
-        try {
-            JsonNode root = app.getContent()==null? MAPPER.createObjectNode(): MAPPER.readTree(app.getContent());
-            var obj = (root.isObject()? root : MAPPER.createObjectNode());
-            JsonNode talent = obj.get("specialAcademicTalent");
-            if (talent==null || !talent.isObject()) {
-                var talentObj = MAPPER.createObjectNode();
-                talentObj.put("isApplying", true);
-                talentObj.put("defensePassed", true);
-                ((com.fasterxml.jackson.databind.node.ObjectNode)obj).set("specialAcademicTalent", talentObj);
-            } else {
-                ((com.fasterxml.jackson.databind.node.ObjectNode)talent).put("defensePassed", true);
-            }
-            app.setContent(MAPPER.writeValueAsString(obj));
-        } catch(Exception ignored) {}
-        recalcScores(app); // override to full 15 when defensePassed
-        return applicationRepository.save(app);
+        return distributedLockService.executeWithLockAndRetry("application:specialTalent:" + id, () -> {
+            Application app = applicationRepository.findById(id).orElseThrow();
+            // Update content JSON: set specialAcademicTalent.defensePassed = true
+            try {
+                JsonNode root = app.getContent()==null? MAPPER.createObjectNode(): MAPPER.readTree(app.getContent());
+                var obj = (root.isObject()? root : MAPPER.createObjectNode());
+                JsonNode talent = obj.get("specialAcademicTalent");
+                if (talent==null || !talent.isObject()) {
+                    var talentObj = MAPPER.createObjectNode();
+                    talentObj.put("isApplying", true);
+                    talentObj.put("defensePassed", true);
+                    ((com.fasterxml.jackson.databind.node.ObjectNode)obj).set("specialAcademicTalent", talentObj);
+                } else {
+                    ((com.fasterxml.jackson.databind.node.ObjectNode)talent).put("defensePassed", true);
+                }
+                app.setContent(MAPPER.writeValueAsString(obj));
+            } catch(Exception ignored) {}
+            recalcScores(app); // override to full 15 when defensePassed
+            return applicationRepository.save(app);
+        }, 3);
     }
 
+    @Transactional
+    @CacheEvict(value = "applications", key = "#id")
     public Application recalc(Long id){
-        Application app = applicationRepository.findById(id).orElseThrow();
-        recalcScores(app);
-        return applicationRepository.save(app);
+        return distributedLockService.executeWithLockAndRetry("application:recalc:" + id, () -> {
+            Application app = applicationRepository.findById(id).orElseThrow();
+            recalcScores(app);
+            return applicationRepository.save(app);
+        }, 3);
     }
 
     // === PDF 导出 ===
+    @Transactional(readOnly = true)  // Add transaction to handle lazy loading
     public byte[] exportPdf(Long id){
-        Application app = applicationRepository.findById(id).orElseThrow();
+        // Use the proper method to fetch with eager loading to avoid lazy initialization issues
+        Application app = applicationRepository.findByIdWithUserAndActivity(id)
+            .orElseThrow(() -> new RuntimeException("Application not found"));
+
+        // Ensure lazy-loaded relationships are initialized within transaction
+        if (app.getUser() != null) {
+            app.getUser().getStudentId(); // Force initialization
+            app.getUser().getRoles().size(); // Force roles initialization to prevent JSON serialization issues
+        }
+        if (app.getActivity() != null) {
+            app.getActivity().getName(); // Force initialization
+        }
+
         recalcScores(app);
         applicationRepository.save(app);
+
         try(PDDocument doc = new PDDocument(); ByteArrayOutputStream bos = new ByteArrayOutputStream()){
             PDPage page = new PDPage(PDRectangle.A4);
             doc.addPage(page);
@@ -301,7 +456,7 @@ public class ApplicationService {
                         for (JsonNode p: proofs) { if (p.path("id").asLong(-2)==fid) { list.add(p); break; } }
                     }
                 } else if (item.has("proofFileId")) {
-                    long fid = item.get("proofFileId").asLong(-1);
+                    long fid = item.path("proofFileId").asLong(-1);
                     for (JsonNode p: proofs) { if (p.path("id").asLong(-2)==fid) { list.add(p); break; } }
                 }
                 return list;
@@ -310,21 +465,43 @@ public class ApplicationService {
             java.util.function.BiFunction<Integer, JsonNode, JsonNode> fallbackByIndex = (idx, proofs) -> {
                 if (proofs!=null && proofs.isArray() && proofs.size()>idx) return proofs.get(idx); return null; };
 
+            // Improved image drawing function with better spacing calculation
             java.util.function.BiFunction<byte[], String, Float> drawImage = (bytes, caption) -> {
                 try {
                     org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject img = org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject.createFromByteArray(doc, bytes, caption);
-                    float maxW = width;
+                    float maxW = width * 0.8f; // Limit image width to 80% of page width
+                    float maxH = 200f; // Maximum height for images to prevent them from being too large
                     float imgW = img.getWidth();
                     float imgH = img.getHeight();
-                    float scale = Math.min(1f, maxW / imgW);
+
+                    // Calculate scale to fit both width and height constraints
+                    float scaleW = maxW / imgW;
+                    float scaleH = maxH / imgH;
+                    float scale = Math.min(Math.min(scaleW, scaleH), 1f);
+
                     float drawW = imgW * scale;
                     float drawH = imgH * scale;
-                    ensureSpace.accept(drawH + 40);
-                    ctx.yRef = writeWrap(ctx.csRef, fFinal, 10, caption, margin, ctx.yRef, 12, width) - 4;
+
+                    // Calculate total space needed: caption + spacing + image + bottom spacing
+                    float captionHeight = 15f;
+                    float spacingBefore = 8f;
+                    float spacingAfter = 12f;
+                    float totalNeeded = captionHeight + spacingBefore + drawH + spacingAfter;
+
+                    ensureSpace.accept(totalNeeded);
+
+                    // Draw caption with proper spacing
+                    ctx.yRef = writeWrap(ctx.csRef, fFinal, 10, caption, margin, ctx.yRef, 12, width);
+                    ctx.yRef -= spacingBefore;
+
+                    // Draw image with proper positioning
                     ctx.csRef.drawImage(img, margin, ctx.yRef - drawH, drawW, drawH);
-                    ctx.yRef -= (drawH + 14);
+                    ctx.yRef -= (drawH + spacingAfter);
+
                 } catch (Exception ex) {
-                    try { ctx.yRef = writeWrap(ctx.csRef, fFinal, 10, caption + " (图片加载失败)", margin, ctx.yRef, 12, width) - 4; } catch (Exception ignore) {}
+                    try {
+                        ctx.yRef = writeWrap(ctx.csRef, fFinal, 10, caption + " (图片加载失败)", margin, ctx.yRef, 12, width) - 4;
+                    } catch (Exception ignore) {}
                 }
                 return ctx.yRef;
             };
@@ -493,7 +670,7 @@ public class ApplicationService {
                 double m = compPerf.path("internshipMonths").asDouble(0);
                 if(m >= 12) internshipScore = 1; else if(m > 6) internshipScore = 0.5; else internshipScore = 0;
             } else {
-                String internshipFlag = compPerf.path("internship").asText("").toUpperCase(Locale.ROOT);
+                String internshipFlag = compPerf.path("military").asText("").toUpperCase(Locale.ROOT);
                 if(internshipFlag.contains("FULL" ) || internshipFlag.contains("YEAR")) internshipScore = 1; else if(internshipFlag.contains("HALF") || internshipFlag.contains("SEMESTER")) internshipScore = 0.5; // else 0
             }
             // === 参军入伍服兵役 === (满 2 分) ===
@@ -585,7 +762,7 @@ public class ApplicationService {
                 int size = c.path("totalTeamMembers").asInt(0);
                 int pos = c.path("teamRank").asInt(0);
                 if(special){
-                    if(pos==1) val = base/3d; else if(pos==2 || pos==3) val = base/4d; else if(pos==4 || pos==5) val = base/5d; else val=0d;
+                    if(pos==1) val = base/3d; else if(pos==2 || pos==3) val = base/4d; else if(pos==4 || pos==5) val= base/5d; else val=0d;
                 } else {
                     if(size<=1) val=base/3d; else if(size==2) val=base/3d; else if(size>=3 && size<=5) val= base/size; else if(size>5){ if(pos>=1 && pos<=5) val= base/5d; }
                 }
@@ -608,12 +785,50 @@ public class ApplicationService {
         return userRepository.findByStudentId(sid).orElseThrow();
     }
 
-    private Application owned(Long id) {
-        Application app = applicationRepository.findById(id).orElseThrow();
-        User me = currentUserEntity();
-        if (!app.getUser().getId().equals(me.getId())) {
-            throw new IllegalStateException("无权访问此申请");
+    @Transactional(readOnly = true)  // 添加事务支持
+    protected Application owned(Long id) { // 改为protected以支持事务注解
+        Application app;
+
+        // 首先尝试使用预加载查询
+        try {
+            app = applicationRepository.findByIdWithUserAndActivity(id).orElseThrow(() -> new RuntimeException("Application not found"));
+
+            // 确保用户关系已加载
+            if (app.getUser() != null) {
+                app.getUser().getStudentId(); // 触发加载
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to use eager loading in owned() method, falling back to regular query: " + e.getMessage());
+            // 降级处理：使用普通查询但在事务内
+            app = applicationRepository.findById(id).orElseThrow(() -> new RuntimeException("Application not found"));
         }
+
+        User me = currentUserEntity();
+
+        try {
+            if (!app.getUser().getId().equals(me.getId())) {
+                throw new IllegalStateException("无权访问此申请");
+            }
+        } catch (Exception e) {
+            // 如果懒加载失败，使用原生查询验证权限
+            System.err.println("Warning: Failed to check ownership via lazy loading, using native query fallback: " + e.getMessage());
+            try {
+                Optional<Object[]> result = applicationRepository.findApplicationWithUserByIdNative(id);
+                if (result.isPresent()) {
+                    Object[] row = result.get();
+                    String ownerStudentId = row[row.length-5].toString(); // student_id位置
+                    if (!me.getStudentId().equals(ownerStudentId)) {
+                        throw new IllegalStateException("无权访问此申请");
+                    }
+                } else {
+                    throw new IllegalStateException("无法验证申请所有权");
+                }
+            } catch (Exception fallbackException) {
+                System.err.println("Error: Native query fallback also failed in owned() method: " + fallbackException.getMessage());
+                throw new IllegalStateException("无法验证申请所有权");
+            }
+        }
+
         return app;
     }
 
@@ -691,7 +906,7 @@ public class ApplicationService {
         String merged = mergeContent(app.getContent(), contentJson==null?"{}":contentJson);
         app.setContent(merged);
         recalcScores(app);
-        app.setStatus(ApplicationStatus.SYSTEM_APPROVED);
+        app.setStatus(ApplicationStatus.ADMIN_REVIEWING);
         app.setSubmittedAt(LocalDateTime.now());
         app.setSystemReviewedAt(LocalDateTime.now());
         app.setSystemReviewComment(null);
@@ -712,15 +927,52 @@ public class ApplicationService {
     }
 
     public Application cancel(Long id){
-        Application app = applicationRepository.findById(id).orElseThrow();
+        Application app = null;
+
+        // 首先尝试使用预加载查询
+        try {
+            app = applicationRepository.findByIdWithUserAndActivity(id).orElseThrow(() -> new RuntimeException("Application not found"));
+
+            // 确保用户关系已加载
+            if (app.getUser() != null) {
+                app.getUser().getStudentId(); // 触发加载
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to use eager loading in cancel() method, falling back to regular query: " + e.getMessage());
+            // 降级处理：使用普通查询但在事务内
+            app = applicationRepository.findById(id).orElseThrow(() -> new RuntimeException("Application not found"));
+        }
+
         // 只有管理员或本人可取消；审核员(REVIEWER)不再具备取消权限
         boolean admin = hasAuthority("ADMIN");
         if(!admin){
             User me = currentUserEntity();
-            if(!app.getUser().getId().equals(me.getId())){
-                throw new IllegalStateException("无权取消该申请");
+
+            try {
+                if(!app.getUser().getId().equals(me.getId())){
+                    throw new IllegalStateException("无权取消该申请");
+                }
+            } catch (Exception e) {
+                // 如果懒加载失败，使用原生查询验证权限
+                System.err.println("Warning: Failed to check ownership via lazy loading in cancel(), using native query fallback: " + e.getMessage());
+                try {
+                    Optional<Object[]> result = applicationRepository.findApplicationWithUserByIdNative(id);
+                    if (result.isPresent()) {
+                        Object[] row = result.get();
+                        String ownerStudentId = row[row.length-5].toString(); // student_id位置
+                        if (!me.getStudentId().equals(ownerStudentId)) {
+                            throw new IllegalStateException("无权取消该申请");
+                        }
+                    } else {
+                        throw new IllegalStateException("无法验证申请所有权");
+                    }
+                } catch (Exception fallbackException) {
+                    System.err.println("Error: Native query fallback also failed in cancel() method: " + fallbackException.getMessage());
+                    throw new IllegalStateException("无法验证申请所有权");
+                }
             }
         }
+
         if(app.getStatus()==ApplicationStatus.APPROVED){
             throw new IllegalStateException("已通过的申请不能取消");
         }

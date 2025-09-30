@@ -10,9 +10,14 @@ public class ImportResult {
 
     public ImportResult(List<ImportRecord> details) {
         this.details = details;
-        this.success = (int) details.stream().filter(d -> "success".equals(d.getStatus())).count();
+        this.success = (int) details.stream().filter(d -> "success".equals(d.getStatus()) || "created".equals(d.getStatus()) || "updated".equals(d.getStatus())).count();
         this.failed = (int) details.stream().filter(d -> "failed".equals(d.getStatus())).count();
         this.warnings = (int) details.stream().filter(d -> "warning".equals(d.getStatus())).count();
+    }
+
+    // 添加getTotal方法
+    public int getTotal() {
+        return details != null ? details.size() : 0;
     }
 
     // Getters and Setters
@@ -48,4 +53,3 @@ public class ImportResult {
         this.details = details;
     }
 }
-

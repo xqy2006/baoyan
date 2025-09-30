@@ -47,82 +47,141 @@ docker compose down
 docker compose down -v
 ```
 
-## 环境变量一览（来自 .env.sample，可按需裁剪）
-| 变量 | 说明 | 示例 | 必需 |
-|------|------|------|------|
-| APP_PORT | 后端服务端口（容器内固定 8080） | 8080 | 否 |
-| DB_NAME | 数据库名 | xmudemo | 是 |
-| DB_HOST | 数据库主机（compose 内为 db） | db | 否 |
-| DB_USERNAME | 应用使用的 MySQL 用户 | appuser | 是 |
-| DB_PASSWORD | 应用用户密码 | ChangeAppPwd456! | 是 |
-| DB_ROOT_PASSWORD | MySQL root 密码 | ChangeRootPwd123! | 是 |
-| DB_URL | 完整 JDBC URL（留空则用默认拼接或 application.properties 默认） | jdbc:mysql://db:3306/xmudemo?... | 否 |
-| JWT_SECRET | JWT 签名密钥（≥64 字符） | 长随机串 | 是 |
-| JAVA_OPTS | JVM 参数 | -Xms256m -Xmx512m | 否 |
-| SPRING_PROFILES_ACTIVE | Spring 活动配置文件 | prod | 否 |
-| APP_UPLOAD_DIR | 上传目录（默认 uploads） | /app/uploads | 否 |
+## 使用已构建好的镜像（推荐：直接拉取 GHCR 镜像）
+如果你不想在本地构建镜像，可以直接使用我们在 GitHub Actions 中构建并推送到 GitHub Container Registry (GHCR) 的镜像：
 
-## 生成安全的 JWT 密钥示例
-PowerShell：
+镜像地址：
 ```
-[Convert]::ToBase64String((New-Object Security.Cryptography.RNGCryptoServiceProvider).GetBytes( (New-Object byte[] 96)))
-```
-OpenSSL（Git Bash / WSL）：
-```
-openssl rand -base64 96
+ghcr.io/xqy2006/baoyan:main
 ```
 
-## 仅构建后端镜像（不使用 compose）
+- 从 registry 拉取镜像（Windows CMD）：
 ```
-docker build -t xmudemo-backend:latest .
-# 启动数据库
-docker run -d --name xmudemo-db -e MYSQL_ROOT_PASSWORD=RootPass123 -e MYSQL_DATABASE=xmudemo \
-  -e MYSQL_USER=appuser -e MYSQL_PASSWORD=AppUserPass123 -p 3306:3306 mysql:8.3
-# 等待数据库就绪后启动后端
-docker run -d --name xmudemo-backend --link xmudemo-db:db -p 8080:8080 \
-  -e DB_USERNAME=appuser -e DB_PASSWORD=AppUserPass123 \
-  -e DB_URL="jdbc:mysql://db:3306/xmudemo?createDatabaseIfNotExist=true&serverTimezone=UTC&characterEncoding=UTF-8" \
-  -e JWT_SECRET=REPLACE_WITH_LONG_SECRET xmudemo-backend:latest
+docker pull ghcr.io/xqy2006/baoyan:main
+```
+- Linux / macOS（Bash / Zsh）：
+```
+docker pull ghcr.io/xqy2006/baoyan:main
 ```
 
-## 如果你仍想单独构建前端
+- 直接以单容器方式运行（Windows CMD，使用 .env 环境变量文件）：
 ```
-# 可选：只在需要分离部署或自定义 Nginx 时使用
-cd frontend
-npm install
-npm run build   # 产物在 frontend/build
-# （可将产物复制进后端 resources/static 或继续用独立 Nginx）
+# 在 CMD 中：
+setlocal enabledelayedexpansion
+for /f "usebackq delims=" %%a in (".env") do (
+  for /f "tokens=1* delims==" %%i in ("%%a") do (
+    docker run -d --name xmudemo-backend --env "%%i=%%j" -p 8080:8080 ghcr.io/xqy2006/baoyan:main
+  )
+)
+endlocal
 ```
-
-## 升级 / 修改说明
-- 改动 Java 代码：`docker compose build backend && docker compose up -d`。
-- 改动依赖：建议 `--no-cache` 重建。
-- 想进一步缩小镜像：可用 Spring Boot 分层 JAR / distroless / jlink。
-
-## 健康检查
-- Dockerfile 使用 `/actuator/health`。
-- 若关闭 actuator，请同步删除或修改 HEALTHCHECK，避免容器永远 unhealthy。
-
-## 持久化
-- `uploads` 目录：挂载 `uploads_data` 卷。
-- MySQL：`db_data` 卷。
-
-## 常见问题 (FAQ)
-1. 数据库未就绪导致连接失败：compose 已用 healthcheck，仍失败可延长 `start_period`。
-2. 想修改端口映射：编辑 `docker-compose.yml` 的 `ports: - "8080:8080"` 左侧数字。
-3. JWT 太短：安全风险，务必使用高熵随机串。
-4. 导出/恢复数据库：
+- 直接以单容器方式运行（Linux / macOS，使用 .env）：
 ```
-# 备份
-docker exec -i xmudemo-mysql mysqldump -uappuser -pChangeAppPwd456! xmudemo > backup.sql
-# 恢复
-docker exec -i xmudemo-mysql mysql -uappuser -pChangeAppPwd456! xmudemo < backup.sql
+# 在 Bash/Zsh：
+set -o allexport; source .env; set +o allexport
+docker run -d --name xmudemo-backend --env-file <(grep -v '^#' .env | sed '/^$/d') -p 8080:8080 ghcr.io/xqy2006/baoyan:main
+# 备注：某些 shell（如 macOS 默认 zsh）不支持 --env-file 接受进程替代符号；在这种情况下使用：
+# docker run --env-file .env -d --name xmudemo-backend -p 8080:8080 ghcr.io/xqy2006/baoyan:main
 ```
 
-## 本地开发模式
+- 推荐更简单的方法（直接指定必须的环境变量）：
 ```
-# 启动本地 MySQL (确保 3306 可用，或修改 application.properties 默认 URL)
-# 然后：
-./quick-start.bat   (Windows)
+# Windows CMD（示例）：
+docker run -d --name xmudemo-backend -p 8080:8080 ^
+  --env DB_USERNAME=appuser --env DB_PASSWORD=ChangeAppPwd456! ^
+  --env DB_URL="jdbc:mysql://db:3306/xmudemo?createDatabaseIfNotExist=true&serverTimezone=UTC&characterEncoding=UTF-8" ^
+  --env JWT_SECRET=REPLACE_WITH_LONG_SECRET ^
+  ghcr.io/xqy2006/baoyan:main
+
+# Linux/macOS（Bash/Zsh）：
+docker run -d --name xmudemo-backend -p 8080:8080 \
+  --env DB_USERNAME=appuser --env DB_PASSWORD=ChangeAppPwd456! \
+  --env DB_URL="jdbc:mysql://db:3306/xmudemo?createDatabaseIfNotExist=true&serverTimezone=UTC&characterEncoding=UTF-8" \
+  --env JWT_SECRET=REPLACE_WITH_LONG_SECRET \
+  ghcr.io/xqy2006/baoyan:main
 ```
-访问：http://localhost:8080/
+
+- 使用 docker-compose（把服务改为使用远程镜像而不是本地构建）：
+```
+# 在 docker-compose.override.yml 或直接修改 docker-compose.yml 中 backend 的部分为：
+# backend:
+#   image: ghcr.io/xqy2006/baoyan:main
+#   env_file: .env
+#   ports:
+#     - "8080:8080"
+#   volumes:
+#     - uploads_data:/app/uploads
+#   depends_on:
+#     - db
+```
+然后运行（Windows CMD / PowerShell / Linux / macOS）：
+```
+# 现代 Docker 推荐使用：
+docker compose pull backend
+docker compose up -d backend
+
+# 旧版或兼容写法（如果你仅能使用 docker-compose 命令）：
+docker-compose pull backend
+docker-compose up -d backend
+```
+
+说明：容器内部的应用仍监听 8080（容器内端口不可随意更改，见下节如何映射到宿主机任意端口）。
+
+## 如何将服务部署到指定的宿主机端口
+容器内应用监听固定 8080 端口，若你想把服务放在宿主机的其它端口（例如 8081 或 80），只需在端口映射中调整左侧端口：
+
+- docker run（Windows CMD）：
+```
+docker run -d --name xmudemo-backend -p 8081:8080 --env-file .env ghcr.io/xqy2006/baoyan:main
+```
+- docker run（Linux / macOS，Bash/Zsh）：
+```
+docker run -d --name xmudemo-backend -p 8081:8080 --env-file .env ghcr.io/xqy2006/baoyan:main
+```
+
+- docker-compose（docker-compose.yml 或 override）：
+```
+ports:
+  - "8081:8080"   # 将宿主机 8081 映射到容器 8080
+```
+
+示例：映射到 80（需要管理员权限或端口未被占用）：
+- Windows CMD：
+```
+docker run -d --name xmudemo-backend -p 80:8080 --env-file .env ghcr.io/xqy2006/baoyan:main
+```
+- Linux/macOS：
+```
+# 如果主机使用 systemd 或有防火墙，确保 80 可用并允许流量
+sudo docker run -d --name xmudemo-backend -p 80:8080 --env-file .env ghcr.io/xqy2006/baoyan:main
+```
+注意：在 Windows 下将宿主机 80 端口映射给 Docker 容器时，若已被系统服务占用（如 IIS、Http.sys），需先释放该端口或选择其它端口。
+
+## 如何更新到最新的 GHCR 镜像
+如果仓库的 GitHub Actions 已构建并推送了新镜像（主分支 `main` 或其他 tag），按下列步骤更新运行中的服务：
+
+- 对于 docker-compose（推荐）：
+```
+# Windows / Linux / macOS（现代 docker）：
+docker compose pull backend
+docker compose up -d backend
+
+# 兼容旧命令：
+docker-compose pull backend
+docker-compose up -d backend
+```
+
+- 对于单容器 docker run：
+```
+# Windows CMD：
+docker pull ghcr.io/xqy2006/baoyan:main
+docker stop xmudemo-backend || true
+docker rm xmudemo-backend || true
+docker run -d --name xmudemo-backend -p 8080:8080 --env-file .env ghcr.io/xqy2006/baoyan:main
+
+# Linux / macOS（Bash）：
+sudo docker pull ghcr.io/xqy2006/baoyan:main
+sudo docker stop xmudemo-backend || true
+sudo docker rm xmudemo-backend || true
+sudo docker run -d --name xmudemo-backend -p 8080:8080 --env-file .env ghcr.io/xqy2006/baoyan:main
+```

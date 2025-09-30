@@ -45,6 +45,9 @@ public class Application {
     private Double performanceScore;
     private Double totalScore;
 
+    @Version
+    private Long version; // 乐观锁版本号
+
     @PreUpdate
     public void preUpdate() { this.lastUpdateDate = LocalDateTime.now(); }
 
@@ -80,11 +83,18 @@ public class Application {
     public void setPerformanceScore(Double performanceScore) { this.performanceScore = performanceScore; }
     public Double getTotalScore() { return totalScore; }
     public void setTotalScore(Double totalScore) { this.totalScore = totalScore; }
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
 
     @Transient
+    @JsonIgnore
     public Long getActivityId() { return activity==null? null : activity.getId(); }
+
     @Transient
+    @JsonIgnore
     public String getUserStudentId() { return user==null? null : user.getStudentId(); }
+
     @Transient
+    @JsonIgnore
     public String getActivityName(){ return activity==null? null: activity.getName(); }
 }
