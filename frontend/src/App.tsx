@@ -80,8 +80,7 @@ const Shell: React.FC<{children:React.ReactNode}> = ({ children }) => {
         aria-current={active? 'page':undefined}
         className={`flex items-center gap-2 h-10 px-4 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${active? 'bg-blue-600 text-white shadow-sm':'text-gray-700 hover:bg-gray-100 hover:text-gray-900'}`}
       >
-        <Icon className="w-4 h-4 flex-shrink-0" />
-        <span className="hidden lg:inline">{label}</span>
+        <span>{label}</span>
       </button>
     );
   };
@@ -100,55 +99,71 @@ const Shell: React.FC<{children:React.ReactNode}> = ({ children }) => {
     );
   };
 
+  // Render conditionally based on device type for better control
+  if (device === 'mobile') {
+    return (
+      <div className="h-screen flex flex-col bg-gray-50">
+        {/* 主内容区 */}
+        <main
+          className="flex-1 overflow-y-auto overflow-x-hidden p-3"
+          style={{ paddingBottom: navHeight + 16 }}
+          role="main"
+        >
+          <div className="max-w-full mx-auto">
+            {children}
+          </div>
+        </main>
+
+        {/* 移动端底部导航 */}
+        <nav
+          ref={mobileNavRef}
+          className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50"
+          aria-label="Bottom Navigation"
+        >
+          <div className="flex items-stretch h-14 px-1">
+            {navItems.map(n=> <MobileNavButton key={n.path} path={n.path} label={n.label(user)} Icon={n.icon} />)}
+          </div>
+        </nav>
+      </div>
+    );
+  }
+
+  // Desktop layout
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* 桌面端顶部导航 */}
-      <header className="hidden md:block bg-white border-b shadow-sm sticky top-0 z-40">
+      <header className="bg-white border-b shadow-sm sticky top-0 z-40">
         <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-6">
+            <div className="flex items-center space-x-4">
               <div className="flex-shrink-0">
                 <h1 className="text-xl font-bold text-gray-900 cursor-pointer" onClick={() => navigate('/')}>
                   保研小助手
                 </h1>
               </div>
-              <nav className="flex space-x-1" aria-label="Main Navigation">
-                {navItems.map(n=> <DesktopNavButton key={n.path} path={n.path} label={n.label(user)} Icon={n.icon} />)}
-              </nav>
-            </div>
-            <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-600">
                 {user.name || user.username}
               </span>
               <div className="text-xs text-gray-400">
-                © {new Date().getFullYear()} XMU Demo
+                © {new Date().getFullYear()} xqy
               </div>
             </div>
+            <nav className="flex space-x-2" aria-label="Main Navigation">
+              {navItems.map(n=> <DesktopNavButton key={n.path} path={n.path} label={n.label(user)} Icon={n.icon} />)}
+            </nav>
           </div>
         </div>
       </header>
 
       {/* 主内容区 */}
       <main
-        className="flex-1 overflow-y-auto px-2 md:px-4 py-4"
-        style={{ paddingBottom: device === 'mobile' ? `${navHeight + 16}px` : '32px' }}
+        className="flex-1 overflow-y-auto px-4 py-4"
         role="main"
       >
-        <div className="max-w-screen-2xl mx-auto px-2 sm:px-4 lg:px-6">
-          <div className="min-w-0 w-full">
-            {children}
-          </div>
+        <div className="max-w-screen-2xl mx-auto px-4 lg:px-6">
+          {children}
         </div>
       </main>
-
-      {/* 移动端底部导航: 固定在底部 */}
-      <nav
-        ref={mobileNavRef}
-        className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t h-14 px-2 flex items-center justify-around z-50"
-        aria-label="Bottom Navigation"
-      >
-        {navItems.map(n=> <MobileNavButton key={n.path} path={n.path} label={n.label(user)} Icon={n.icon} />)}
-      </nav>
     </div>
   );
 };

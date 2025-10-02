@@ -134,19 +134,19 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
   };
 
   return (
-    <div className="p-4 space-y-6">
+    <div className="w-full max-w-6xl mx-auto space-y-4 overflow-x-hidden p-3 sm:p-4 md:p-6">
       {/* 头部信息 */}
-      <div className="flex items-center space-x-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-3 h-3 sm:w-4 sm:h-4" />
         </Button>
-        <div className="flex-1">
-          <h1 className="text-lg">申请审核详情</h1>
-          <p className="text-sm text-gray-600">{(appState as any).activityName}</p>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-base sm:text-lg md:text-xl font-semibold break-words">申请审核详情</h1>
+          <p className="text-xs sm:text-sm text-gray-600 break-words">{(appState as any).activityName}</p>
         </div>
         {(isAdmin || isReviewer || isStudent) && (
           <Button variant="outline" size="sm" onClick={downloadPdf} title="导出PDF">
-            <Printer className="w-4 h-4 mr-1" />导出
+            <Printer className="w-3 h-3 sm:w-4 sm:h-4 mr-1" /><span className="text-xs sm:text-sm">导出</span>
           </Button>
         )}
         <Badge className={getStatusColor(appState.status)}>

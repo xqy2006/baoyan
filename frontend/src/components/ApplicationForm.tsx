@@ -495,7 +495,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
 
 
   return (
-    <div className="p-4 space-y-6 pb-safe-bottom md:pb-0">
+    <div className="w-full max-w-4xl mx-auto p-4 sm:p-5 md:p-6 space-y-6 pb-safe-bottom md:pb-0">
       {/* 顶部返回与标题 - 小屏压缩按钮文字 */}
       <div className="flex items-center gap-2 flex-wrap">
         <Button variant="ghost" size="sm" onClick={onCancel} className="shrink-0"><ArrowLeft className="w-4 h-4" /></Button>
@@ -520,27 +520,27 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
       </div>
 
       <Card className="bg-blue-50 border-blue-200">
-        <CardContent className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center text-xs md:text-sm">
-          <div><p className="text-gray-600">学业(0-80)</p><p className="text-sm md:text-lg text-blue-600">{backendScores.academic.toFixed(2)}</p></div>
-          <div><p className="text-gray-600">学术专长(0-15)</p><p className="text-sm md:text-lg text-indigo-600">{backendScores.specWeighted.toFixed(2)}</p></div>
-          <div><p className="text-gray-600">综合表现(0-5)</p><p className="text-sm md:text-lg text-green-600">{backendScores.perfWeighted.toFixed(2)}</p></div>
-          <div><p className="text-gray-600">总分(0-100)</p><p className="text-sm md:text-lg">{backendScores.total.toFixed(2)}</p></div>
+        <CardContent className="p-2.5 sm:p-3 md:p-4 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 md:gap-4 text-center">
+          <div><p className="text-[10px] sm:text-xs text-gray-600 truncate">学业(0-80)</p><p className="text-sm sm:text-base md:text-lg text-blue-600 font-semibold">{backendScores.academic.toFixed(2)}</p></div>
+          <div><p className="text-[10px] sm:text-xs text-gray-600 truncate">学术专长(0-15)</p><p className="text-sm sm:text-base md:text-lg text-indigo-600 font-semibold">{backendScores.specWeighted.toFixed(2)}</p></div>
+          <div><p className="text-[10px] sm:text-xs text-gray-600 truncate">综合表现(0-5)</p><p className="text-sm sm:text-base md:text-lg text-green-600 font-semibold">{backendScores.perfWeighted.toFixed(2)}</p></div>
+          <div><p className="text-[10px] sm:text-xs text-gray-600 truncate">总分(0-100)</p><p className="text-sm sm:text-base md:text-lg font-bold">{backendScores.total.toFixed(2)}</p></div>
         </CardContent>
       </Card>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <fieldset disabled={!isEditable} className={isEditable? '' : 'opacity-80 pointer-events-none'}>
           {/* 基本信息 */}
-          <Card><CardHeader><CardTitle className="flex items-center space-x-2"><UserIcon className="w-5 h-5" /><span>基本信息</span></CardTitle></CardHeader><CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><Label>姓名</Label><Input value={basicInfo.name} disabled /></div><div><Label>学号</Label><Input value={basicInfo.studentId} disabled /></div></div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base sm:text-lg"><UserIcon className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" /><span>基本信息</span></CardTitle></CardHeader><CardContent className="space-y-3 sm:space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"><div><Label className="text-xs sm:text-sm">姓名</Label><Input value={basicInfo.name} disabled /></div><div><Label className="text-xs sm:text-sm">学号</Label><Input value={basicInfo.studentId} disabled /></div></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div><Label>系别</Label><Input value={basicInfo.department} onChange={e=>handleBasicChange('department', e.target.value)} /></div>
               <div><Label>专业</Label><Input value={basicInfo.major} onChange={e=>handleBasicChange('major', e.target.value)} /></div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div><Label>GPA</Label><Input value={basicInfo.gpa} onChange={e=>handleBasicChange('gpa', e.target.value)} /></div>
-              <div><Label>学业排名</Label><Input value={basicInfo.academicRanking} onChange={e=>handleBasicChange('academicRanking', e.target.value)} /></div>
-              <div><Label>专业总人数</Label><Input value={basicInfo.totalStudents} onChange={e=>handleBasicChange('totalStudents', e.target.value)} /></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+              <div><Label className="text-xs sm:text-sm">GPA</Label><Input value={basicInfo.gpa} onChange={e=>handleBasicChange('gpa', e.target.value)} /></div>
+              <div><Label className="text-xs sm:text-sm">学业排名</Label><Input value={basicInfo.academicRanking} onChange={e=>handleBasicChange('academicRanking', e.target.value)} /></div>
+              <div><Label className="text-xs sm:text-sm">专业总人数</Label><Input value={basicInfo.totalStudents} onChange={e=>handleBasicChange('totalStudents', e.target.value)} /></div>
             </div>
             <div>
               <Label>成绩单 *</Label>
@@ -549,22 +549,22 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
           </CardContent></Card>
 
           {/* 外语成绩 */}
-          <Card><CardHeader><CardTitle>外语成绩</CardTitle></CardHeader><CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4"><div><Label>CET4</Label><Input value={languageScores.cet4Score} onChange={e=>{setLanguageScores(s=>({...s,cet4Score:e.target.value})); markDirty();}} /></div><div><Label>CET6</Label><Input value={languageScores.cet6Score} onChange={e=>{setLanguageScores(s=>({...s,cet6Score:e.target.value})); markDirty();}} /></div></div>
-            <div className="grid grid-cols-3 gap-4"><div><Label>TOEFL</Label><Input value={languageScores.toeflScore} onChange={e=>{setLanguageScores(s=>({...s,toeflScore:e.target.value})); markDirty();}} /></div><div><Label>IELTS</Label><Input value={languageScores.ieltsScore} onChange={e=>{setLanguageScores(s=>({...s,ieltsScore:e.target.value})); markDirty();}} /></div><div><Label>GRE</Label><Input value={languageScores.greScore} onChange={e=>{setLanguageScores(s=>({...s,greScore:e.target.value})); markDirty();}} /></div></div>
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-xs flex space-x-2"><AlertTriangle className="w-4 h-4 text-red-500" /><span>外语成绩需在有效期内。</span></div>
+          <Card><CardHeader><CardTitle className="text-base sm:text-lg">外语成绩</CardTitle></CardHeader><CardContent className="space-y-3 sm:space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4"><div><Label className="text-xs sm:text-sm">CET4</Label><Input value={languageScores.cet4Score} onChange={e=>{setLanguageScores(s=>({...s,cet4Score:e.target.value})); markDirty();}} /></div><div><Label className="text-xs sm:text-sm">CET6</Label><Input value={languageScores.cet6Score} onChange={e=>{setLanguageScores(s=>({...s,cet6Score:e.target.value})); markDirty();}} /></div></div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4"><div><Label className="text-xs sm:text-sm">TOEFL</Label><Input value={languageScores.toeflScore} onChange={e=>{setLanguageScores(s=>({...s,toeflScore:e.target.value})); markDirty();}} /></div><div><Label className="text-xs sm:text-sm">IELTS</Label><Input value={languageScores.ieltsScore} onChange={e=>{setLanguageScores(s=>({...s,ieltsScore:e.target.value})); markDirty();}} /></div><div><Label className="text-xs sm:text-sm">GRE</Label><Input value={languageScores.greScore} onChange={e=>{setLanguageScores(s=>({...s,greScore:e.target.value})); markDirty();}} /></div></div>
+            <div className="p-2 sm:p-3 bg-red-50 border border-red-200 rounded text-[10px] sm:text-xs flex items-start gap-2"><AlertTriangle className="w-3 h-3 sm:w-4 sm:h-4 text-red-500 flex-shrink-0 mt-0.5" /><span className="break-words">外语成绩需在有效期内。</span></div>
           </CardContent></Card>
 
           {/* 论文发表 (可选) */}
-          <Card><CardHeader><CardTitle className="flex items-center justify-between"><span className="flex items-center space-x-2"><BookOpen className="w-5 h-5" /><span>论文发表 (可选)</span></span><Button type="button" size="sm" onClick={()=>{setPublications(p=>[...p,{ title:'', type:'A类', authors:'', authorRank:1, totalAuthors:1, isCoFirst:false, journal:'', publishYear:new Date().getFullYear(), proofFile:null }]); markDirty();}}><Plus className="w-4 h-4" /></Button></CardTitle></CardHeader><CardContent className="space-y-4">{publications.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}{publications.map((pub,i)=> <Card key={i} className="p-4 space-y-3">
-            <div className="flex justify-between"><h4 className="text-sm">论文 {i+1}</h4>{publications.length>=1 && <Button type="button" size="sm" variant="destructive" onClick={()=>{setPublications(p=>p.filter((_,x)=>x!==i)); markDirty();}}><Trash2 className="w-3 h-3" />删除</Button>}</div>
+          <Card><CardHeader><CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base sm:text-lg"><span className="flex items-center gap-2"><BookOpen className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" /><span>论文发表 (可选)</span></span><Button type="button" size="sm" onClick={()=>{setPublications(p=>[...p,{ title:'', type:'A类', authors:'', authorRank:1, totalAuthors:1, isCoFirst:false, journal:'', publishYear:new Date().getFullYear(), proofFile:null }]); markDirty();}}><Plus className="w-3 h-3 sm:w-4 sm:h-4" /></Button></CardTitle></CardHeader><CardContent className="space-y-3 sm:space-y-4">{publications.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}{publications.map((pub,i)=> <Card key={i} className="p-3 sm:p-4 space-y-2.5 sm:space-y-3">
+            <div className="flex flex-wrap justify-between items-center gap-2"><h4 className="text-xs sm:text-sm font-medium">论文 {i+1}</h4>{publications.length>=1 && <Button type="button" size="sm" variant="destructive" onClick={()=>{setPublications(p=>p.filter((_,x)=>x!==i)); markDirty();}}><Trash2 className="w-3 h-3" /><span className="hidden sm:inline ml-1">删除</span></Button>}</div>
             {/* Publications (论文发表) */}
             {/* 删除原先的描述行，改为显式标签 */}
             <Label className="text-xs">论文标题</Label>
             <Input placeholder="示例: A Study on ..." value={pub.title} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,title:e.target.value}:x)); markDirty();}} />
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 md:gap-4">
               <div>
-                <Label className="text-xs">类别</Label>
+                <Label className="text-xs sm:text-sm">类别</Label>
                 <Select value={pub.type} onValueChange={v=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,type:v as any}:x)); markDirty();}}>
                   <SelectTrigger><SelectValue placeholder="选择类别" /></SelectTrigger>
                   <SelectContent>
@@ -581,21 +581,21 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
                 <Input type="number" value={pub.publishYear} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,publishYear:+e.target.value}:x)); markDirty();}} />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4 items-start">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 md:gap-4 items-start">
               <div>
-                <Label className="text-xs">作者排名</Label>
+                <Label className="text-xs sm:text-sm">作者排名</Label>
                 <Input type="number" value={pub.authorRank} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,authorRank:+e.target.value}:x)); markDirty();}} />
               </div>
               <div>
-                <Label className="text-xs">总作者数</Label>
+                <Label className="text-xs sm:text-sm">总作者数</Label>
                 <Input type="number" value={pub.totalAuthors} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,totalAuthors:+e.target.value}:x)); markDirty();}} />
               </div>
-              <div className="flex flex-col gap-1 text-[11px] text-gray-500">
-                <div className="flex items-center space-x-2">
+              <div className="flex flex-col gap-1 text-[10px] sm:text-[11px] text-gray-500">
+                <div className="flex items-center gap-2">
                   <Checkbox checked={pub.isCoFirst} onCheckedChange={v=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,isCoFirst:!!v}:x)); markDirty();}} disabled={!(pub.authorRank===1||pub.authorRank===2)} />
-                  <span>共同一作</span>
+                  <span className="break-words">共同一作</span>
                 </div>
-                <span>说明: 第一/第二作者勾选=各 50%</span>
+                <span className="break-words">说明: 第一/第二作者勾选=各 50%</span>
               </div>
             </div>
             <div><Label>证明材料</Label><ProofFileUploader meta={pub.proofFile as any} applicationId={applicationId} disabled={!isEditable} onChange={(m)=>{ setPublications(list=> list.map((x,idx)=> idx===i? { ...x, proofFile: m as any }: x)); markDirty(); }} /></div>

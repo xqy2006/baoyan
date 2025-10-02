@@ -376,11 +376,11 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
   };
 
   return (
-    <div className="p-4 space-y-6">
+    <div className="w-full max-w-7xl mx-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
       {/* 页面标题 */}
       <div>
-        <h1>数据导入 / 用户管理</h1>
-        <p className="text-gray-600 mt-2">批量导入或手动创建用户</p>
+        <h1 className="text-lg sm:text-xl md:text-2xl font-semibold">数据导入 / 用户管理</h1>
+        <p className="text-sm sm:text-base text-gray-600 mt-2">批量导入或手动创建用户</p>
       </div>
 
       <Tabs defaultValue="import" className="space-y-4" onValueChange={onTabChange}>

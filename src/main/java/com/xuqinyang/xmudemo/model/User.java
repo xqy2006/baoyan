@@ -32,7 +32,13 @@ public class User {
     @ElementCollection(targetClass = Role.class, fetch = FetchType.EAGER)
     @CollectionTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"))
     @Enumerated(EnumType.STRING)
-    private Set<Role> roles;
+    @Column(name = "role")
+    private Set<Role> roles = new HashSet<>();
+
+    // Constructor
+    public User() {
+        this.roles = new HashSet<>();
+    }
 
     public Long getId() {
         return id;

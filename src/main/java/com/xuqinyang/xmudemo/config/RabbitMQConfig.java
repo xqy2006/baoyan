@@ -15,31 +15,27 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RabbitMQConfig {
 
-    // 队列名称常量
+    // 队列名称常量 - 只保留真正使用的队列
     public static final String APPLICATION_PROCESS_QUEUE = "application.process.queue";
     public static final String ACTIVITY_PROCESS_QUEUE = "activity.process.queue";
     public static final String FILE_PROCESS_QUEUE = "file.process.queue";
     public static final String NOTIFICATION_QUEUE = "notification.queue";
-    public static final String EMAIL_QUEUE = "email.queue";
     public static final String USER_AUTH_QUEUE = "user.auth.queue";
-    public static final String DATA_STATISTICS_QUEUE = "data.statistics.queue";
     public static final String AUDIT_LOG_QUEUE = "audit.log.queue";
-    public static final String SYSTEM_AUTO_REVIEW_QUEUE = "system.auto.review.queue";
+    public static final String STATISTICS_QUEUE = "statistics.queue";
 
     // 交换机名称
     public static final String DIRECT_EXCHANGE = "xmudemo.direct.exchange";
     public static final String TOPIC_EXCHANGE = "xmudemo.topic.exchange";
 
-    // 路由键
+    // 路由键 - 只保留使用的路由键
     public static final String APPLICATION_ROUTING_KEY = "application.process";
     public static final String ACTIVITY_ROUTING_KEY = "activity.process";
     public static final String FILE_ROUTING_KEY = "file.process";
     public static final String NOTIFICATION_ROUTING_KEY = "notification.send";
-    public static final String EMAIL_ROUTING_KEY = "email.send";
     public static final String USER_AUTH_ROUTING_KEY = "user.auth";
-    public static final String DATA_STATISTICS_ROUTING_KEY = "data.statistics";
-    public static final String AUDIT_LOG_ROUTING_KEY = "audit.log";
-    public static final String SYSTEM_AUTO_REVIEW_ROUTING_KEY = "system.auto.review";
+    public static final String AUDIT_ROUTING_KEY = "audit.log";
+    public static final String STATISTICS_ROUTING_KEY = "statistics.data";
 
     @Bean
     public Jackson2JsonMessageConverter messageConverter() {
@@ -119,14 +115,6 @@ public class RabbitMQConfig {
                 .build();
     }
 
-    // 邮件队列
-    @Bean
-    public Queue emailQueue() {
-        return QueueBuilder.durable(EMAIL_QUEUE)
-                .withArgument("x-max-length", 10000)
-                .build();
-    }
-
     // 用户认证队列
     @Bean
     public Queue userAuthQueue() {
@@ -135,27 +123,19 @@ public class RabbitMQConfig {
                 .build();
     }
 
-    // 数据统计队列
-    @Bean
-    public Queue dataStatisticsQueue() {
-        return QueueBuilder.durable(DATA_STATISTICS_QUEUE)
-                .withArgument("x-max-length", 15000)
-                .build();
-    }
-
     // 审计日志队列
     @Bean
     public Queue auditLogQueue() {
         return QueueBuilder.durable(AUDIT_LOG_QUEUE)
-                .withArgument("x-max-length", 5000)
+                .withArgument("x-max-length", 10000)
                 .build();
     }
 
-    // 系统自动审核队列
+    // 数据统计队列
     @Bean
-    public Queue systemAutoReviewQueue() {
-        return QueueBuilder.durable(SYSTEM_AUTO_REVIEW_QUEUE)
-                .withArgument("x-max-length", 8000)
+    public Queue statisticsQueue() {
+        return QueueBuilder.durable(STATISTICS_QUEUE)
+                .withArgument("x-max-length", 5000)
                 .build();
     }
 
@@ -195,15 +175,6 @@ public class RabbitMQConfig {
                 .with(NOTIFICATION_ROUTING_KEY);
     }
 
-    // 绑定邮件队列到主题交换机
-    @Bean
-    public Binding emailBinding() {
-        return BindingBuilder
-                .bind(emailQueue())
-                .to(topicExchange())
-                .with(EMAIL_ROUTING_KEY);
-    }
-
     // 绑定用户认证队列到直接交换机
     @Bean
     public Binding userAuthBinding() {
@@ -213,30 +184,21 @@ public class RabbitMQConfig {
                 .with(USER_AUTH_ROUTING_KEY);
     }
 
-    // 绑定数据统计队列到主题交换机
-    @Bean
-    public Binding dataStatisticsBinding() {
-        return BindingBuilder
-                .bind(dataStatisticsQueue())
-                .to(topicExchange())
-                .with(DATA_STATISTICS_ROUTING_KEY);
-    }
-
-    // 绑定审计日志队列到主题交换机
+    // 绑定审计日志队列到直接交换机
     @Bean
     public Binding auditLogBinding() {
         return BindingBuilder
                 .bind(auditLogQueue())
-                .to(topicExchange())
-                .with(AUDIT_LOG_ROUTING_KEY);
+                .to(directExchange())
+                .with(AUDIT_ROUTING_KEY);
     }
 
-    // 绑定系统自动审核队列到直接交换机
+    // 绑定数据统计队列到直接交换机
     @Bean
-    public Binding systemAutoReviewBinding() {
+    public Binding statisticsBinding() {
         return BindingBuilder
-                .bind(systemAutoReviewQueue())
+                .bind(statisticsQueue())
                 .to(directExchange())
-                .with(SYSTEM_AUTO_REVIEW_ROUTING_KEY);
+                .with(STATISTICS_ROUTING_KEY);
     }
 }

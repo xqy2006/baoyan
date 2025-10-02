@@ -43,6 +43,10 @@ public class RedisConfig {
         // 禁用时间戳写入，使用 ISO 格式
         objectMapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
+        // 配置Jackson处理Hibernate懒加载对象和空Bean
+        objectMapper.configure(com.fasterxml.jackson.databind.SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+        objectMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
         return objectMapper;
     }
 

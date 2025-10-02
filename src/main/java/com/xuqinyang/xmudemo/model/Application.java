@@ -62,7 +62,10 @@ public class Application {
     public void setContent(String content) { this.content = content; }
     public ApplicationStatus getStatus() { return status; }
     public void setStatus(ApplicationStatus status) { this.status = status; }
+
     public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
     public LocalDateTime getLastUpdateDate() { return lastUpdateDate; }
     public void setLastUpdateDate(LocalDateTime lastUpdateDate) { this.lastUpdateDate = lastUpdateDate; }
     public LocalDateTime getSubmittedAt() { return submittedAt; }
@@ -83,18 +86,29 @@ public class Application {
     public void setPerformanceScore(Double performanceScore) { this.performanceScore = performanceScore; }
     public Double getTotalScore() { return totalScore; }
     public void setTotalScore(Double totalScore) { this.totalScore = totalScore; }
+
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }
 
-    @Transient
-    @JsonIgnore
-    public Long getActivityId() { return activity==null? null : activity.getId(); }
+    // 辅助方法
+    public String getActivityName() {
+        return activity != null ? activity.getName() : null;
+    }
 
-    @Transient
-    @JsonIgnore
-    public String getUserStudentId() { return user==null? null : user.getStudentId(); }
+    // Additional convenience methods for accessing related entity data
+    public Long getUserId() {
+        return user != null ? user.getId() : null;
+    }
 
-    @Transient
-    @JsonIgnore
-    public String getActivityName(){ return activity==null? null: activity.getName(); }
+    public String getUserStudentId() {
+        return user != null ? user.getStudentId() : null;
+    }
+
+    public String getUserName() {
+        return user != null ? user.getName() : null;
+    }
+
+    public Long getActivityId() {
+        return activity != null ? activity.getId() : null;
+    }
 }

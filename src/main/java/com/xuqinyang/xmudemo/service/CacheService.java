@@ -88,6 +88,68 @@ public class CacheService {
     @CacheEvict(value = "applications", allEntries = true)
     public void evictAllApplications() {
         log.info("Evicting all application caches due to serialization compatibility issues");
+
+        // 也清除Redis中的应用相关缓存
+        try {
+            Set<String> keys = redisTemplate.keys(APPLICATION_CACHE_PREFIX + "*");
+            if (keys != null && !keys.isEmpty()) {
+                redisTemplate.delete(keys);
+                log.info("Deleted {} application-related Redis keys", keys.size());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to delete application Redis keys: {}", e.getMessage());
+        }
+
+        // 清除应用列表缓存
+        try {
+            Set<String> listKeys = redisTemplate.keys(ACTIVITY_CACHE_PREFIX + "list:applications*");
+            if (listKeys != null && !listKeys.isEmpty()) {
+                redisTemplate.delete(listKeys);
+                log.info("Deleted {} application list Redis keys", listKeys.size());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to delete application list Redis keys: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 安全地清除应用缓存，包括Redis和Spring Cache
+     */
+    public void clearApplicationCachesSafely() {
+        // 清除Spring Cache中的applications缓存
+        try {
+            if (cacheManager != null) {
+                var cache = cacheManager.getCache("applications");
+                if (cache != null) {
+                    cache.clear();
+                    log.info("Cleared Spring cache 'applications'");
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to clear Spring cache applications: {}", e.getMessage());
+        }
+
+        // 清除Redis中以application:开头的所有键
+        try {
+            Set<String> keys = redisTemplate.keys(APPLICATION_CACHE_PREFIX + "*");
+            if (keys != null && !keys.isEmpty()) {
+                redisTemplate.delete(keys);
+                log.info("Deleted {} application-related Redis keys", keys.size());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to delete application Redis keys: {}", e.getMessage());
+        }
+
+        // 清除应用列表缓存
+        try {
+            Set<String> listKeys = redisTemplate.keys(ACTIVITY_CACHE_PREFIX + "list:applications*");
+            if (listKeys != null && !listKeys.isEmpty()) {
+                redisTemplate.delete(listKeys);
+                log.info("Deleted {} application list cache keys", listKeys.size());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to delete application list cache keys: {}", e.getMessage());
+        }
     }
 
     /**

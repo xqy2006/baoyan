@@ -1,6 +1,7 @@
 package com.xuqinyang.xmudemo.service;
 
 import com.xuqinyang.xmudemo.model.*;
+import com.xuqinyang.xmudemo.dto.ApplicationCacheDTO;
 import com.xuqinyang.xmudemo.repository.ApplicationRepository;
 import com.xuqinyang.xmudemo.repository.ActivityRepository;
 import com.xuqinyang.xmudemo.repository.UserRepository;
@@ -40,71 +41,116 @@ public class ApplicationService {
     private FileService fileService;
     @Autowired
     private DistributedLockService distributedLockService;
+    @Autowired
+    private CacheService cacheService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    @Cacheable(value = "applications", key = "'all'")
-    public List<Application> getAllApplications() { return applicationRepository.findAll(); }
+    /**
+     * 获取所有申请 - 带缓存和降级机制
+     */
+    public List<Application> getAllApplications() {
+        // 尝试从缓存获取
+        try {
+            Object cached = cacheService.getActivitiesListFromCache("applications_all");
+            if (cached instanceof List<?>) {
+                @SuppressWarnings("unchecked")
+                List<ApplicationCacheDTO> dtoList = (List<ApplicationCacheDTO>) cached;
+                return dtoList.stream()
+                    .map(ApplicationCacheDTO::toEntity)
+                    .collect(java.util.stream.Collectors.toList());
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to get applications from cache, falling back to database: " + e.getMessage());
+        }
 
-    @Cacheable(value = "applications", key = "#id")
-    @Transactional(readOnly = true)  // 添加事务支持确保懒加载工作正常
-    public Optional<Application> getApplicationById(Long id) {
-        // 使用预加载user和activity关系的查询方法
-        Optional<Application> result = applicationRepository.findByIdWithUserAndActivity(id);
+        // 从数据库查询
+        List<Application> applications;
+        try {
+            // 尝试使用预加载查询
+            applications = applicationRepository.findAllWithUserAndActivity();
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to use eager loading, using fallback query: " + e.getMessage());
+            applications = applicationRepository.findAll();
+        }
 
-        // 如果预加载查询失败或用户信息为空，尝试使用原生查询验证
-        if (result.isPresent()) {
-            Application app = result.get();
-            // 确保懒加载的关系被初始化
+        // 初始化懒加载关系并转换为DTO进行缓存
+        List<ApplicationCacheDTO> dtoList = new ArrayList<>();
+        for (Application app : applications) {
             try {
+                // 在事务内初始化关系
                 if (app.getUser() != null) {
-                    app.getUser().getStudentId(); // 触发User的加载
+                    app.getUser().getStudentId(); // 触发初始化
                 }
                 if (app.getActivity() != null) {
-                    app.getActivity().getName(); // 触发Activity的加载
+                    app.getActivity().getName(); // 触发初始化
                 }
-
-                // 验证用户信息是否正确加载
-                if (app.getUser() == null || app.getUser().getStudentId() == null) {
-                    System.err.println("Warning: User information not properly loaded for application " + id + ", trying native query fallback");
-
-                    // 使用原生查询验证数据库中确实存在用户信息
-                    Optional<Object[]> nativeResult = applicationRepository.findApplicationWithUserByIdNative(id);
-                    if (nativeResult.isPresent()) {
-                        Object[] row = nativeResult.get();
-                        System.err.println("Native query confirms user exists: student_id=" + row[row.length-5]); // student_id should be at this position
-
-                        // 强制重新查询不使用缓存
-                        result = applicationRepository.findById(id);
-                        if (result.isPresent()) {
-                            app = result.get();
-                            // 手动触发关系加载
-                            if (app.getUser() != null) {
-                                app.getUser().getStudentId();
-                            }
-                        }
-                    }
-                }
+                dtoList.add(ApplicationCacheDTO.fromEntity(app));
             } catch (Exception e) {
-                // 如果懒加载失败，记录警告但不抛出异常
-                System.err.println("Warning: Failed to initialize lazy relationships for application " + id + ": " + e.getMessage());
+                System.err.println("Warning: Failed to initialize relationships for application " + app.getId() + ": " + e.getMessage());
+                // 即使关系初始化失败，也要添加基本信息
+                dtoList.add(ApplicationCacheDTO.fromEntity(app));
+            }
+        }
 
-                // 尝试原生查询fallback
-                try {
-                    Optional<Object[]> nativeResult = applicationRepository.findApplicationWithUserByIdNative(id);
-                    if (nativeResult.isPresent()) {
-                        Object[] row = nativeResult.get();
-                        System.err.println("Native query fallback: student_id=" + row[row.length-5]);
+        // 缓存DTO列表
+        try {
+            cacheService.putActivitiesListToCache("applications_all", dtoList, 5, java.util.concurrent.TimeUnit.MINUTES);
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to cache applications: " + e.getMessage());
+        }
 
-                        // 尝试重新从数据库获取
-                        result = applicationRepository.findById(id);
-                        if (result.isPresent()) {
-                            app = result.get();
-                        }
-                    }
-                } catch (Exception fallbackException) {
-                    System.err.println("Native query fallback also failed: " + fallbackException.getMessage());
+        return applications;
+    }
+
+    /**
+     * 根据ID获取申请 - 带缓存和降级机制
+     */
+    @Transactional(readOnly = true)
+    public Optional<Application> getApplicationById(Long id) {
+        // 尝试从缓存获取
+        try {
+            Object cached = cacheService.getActivityFromCache(id);
+            if (cached instanceof ApplicationCacheDTO) {
+                ApplicationCacheDTO dto = (ApplicationCacheDTO) cached;
+                // 从数据库重新查询以获取完整的关联对象
+                Optional<Application> fullApp = applicationRepository.findByIdWithUserAndActivity(id);
+                if (fullApp.isPresent()) {
+                    return fullApp;
+                } else {
+                    // 如果数据库中找不到，返回缓存的实体（但关联对象可能不完整）
+                    return Optional.of(dto.toEntity());
                 }
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to get application from cache, querying database: " + e.getMessage());
+        }
+
+        // 从数据库查询
+        Optional<Application> result;
+        try {
+            result = applicationRepository.findByIdWithUserAndActivity(id);
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to use eager loading, using fallback query: " + e.getMessage());
+            result = applicationRepository.findById(id);
+        }
+
+        // 如果找到，缓存DTO
+        if (result.isPresent()) {
+            try {
+                Application app = result.get();
+                // 初始化关系
+                if (app.getUser() != null) {
+                    app.getUser().getStudentId();
+                }
+                if (app.getActivity() != null) {
+                    app.getActivity().getName();
+                }
+
+                ApplicationCacheDTO dto = ApplicationCacheDTO.fromEntity(app);
+                cacheService.putActivityToCache(id, dto, 10, java.util.concurrent.TimeUnit.MINUTES);
+            } catch (Exception e) {
+                System.err.println("Warning: Failed to cache application " + id + ": " + e.getMessage());
             }
         }
 
@@ -117,15 +163,72 @@ public class ApplicationService {
     @Transactional
     @CacheEvict(value = "applications", allEntries = true)
     public Application createApplication(Application application) {
-        return distributedLockService.executeWithLockAndRetry("application:create:" + application.getUser().getId(),
-            () -> applicationRepository.save(application), 5);
+        // 使用用户ID和活动ID作为锁键，确保相同用户+活动的并发申请被串行化
+        Long userId = application.getUser().getId();
+        Long activityId = application.getActivity().getId();
+        String lockKey = "application:create:" + userId + ":" + activityId;
+
+        return distributedLockService.executeWithLockAndRetry(lockKey,
+            () -> {
+                try {
+                    // 检查用户是否已经有申请存在（业务逻辑检查）
+                    Optional<Application> existing = applicationRepository
+                        .findByUser_IdAndActivity_Id(userId, activityId);
+
+                    if (existing.isPresent()) {
+                        throw new IllegalArgumentException("用户已存在申请，无法重复申请");
+                    }
+
+                    return applicationRepository.save(application);
+
+                } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                    // 处理数据库唯一约束冲突
+                    if (e.getMessage() != null && e.getMessage().contains("UKt67makixmd4asv0kk1qy1f24e")) {
+                        throw new IllegalArgumentException("用户已存在申请，无法重复申请");
+                    } else {
+                        throw new RuntimeException("数据完整性违反: " + e.getMessage(), e);
+                    }
+                } catch (org.hibernate.exception.ConstraintViolationException e) {
+                    // 处理Hibernate约束违反异常
+                    if (e.getConstraintName() != null && e.getConstraintName().contains("UKt67makixmd4asv0kk1qy1f24e")) {
+                        throw new IllegalArgumentException("用户已存在申请，无法重复申请");
+                    } else {
+                        throw new RuntimeException("约束违反: " + e.getMessage(), e);
+                    }
+                } catch (IllegalArgumentException e) {
+                    // 重新抛出业务逻辑异常
+                    throw e;
+                } catch (Exception e) {
+                    // 处理其他未预期的异常
+                    throw new RuntimeException("创建申请失败: " + e.getMessage(), e);
+                }
+            }, 5);
     }
 
     @Transactional
     @CacheEvict(value = "applications", key = "#application.id")
     public Application updateApplication(Application application) {
         return distributedLockService.executeWithLockAndRetry("application:update:" + application.getId(),
-            () -> applicationRepository.save(application), 5);
+            () -> {
+                try {
+                    // 重新加载最新版本以避免乐观锁冲突
+                    Application existing = applicationRepository.findById(application.getId())
+                        .orElseThrow(() -> new IllegalArgumentException("申请不存在"));
+
+                    // 保留版本号和时间戳
+                    application.setVersion(existing.getVersion());
+                    application.setCreatedAt(existing.getCreatedAt());
+
+                    return applicationRepository.save(application);
+                } catch (org.springframework.orm.ObjectOptimisticLockingFailureException e) {
+                    // 重新抛出乐观锁异常，让分布式锁服务处理重试
+                    throw e;
+                } catch (org.springframework.dao.OptimisticLockingFailureException e) {
+                    // 处理另一种乐观锁异常
+                    throw new org.springframework.orm.ObjectOptimisticLockingFailureException(
+                        Application.class, application.getId(), e);
+                }
+            }, 5);
     }
 
     @Transactional
@@ -824,7 +927,7 @@ public class ApplicationService {
                     throw new IllegalStateException("无法验证申请所有权");
                 }
             } catch (Exception fallbackException) {
-                System.err.println("Error: Native query fallback also failed in owned() method: " + fallbackException.getMessage());
+                System.err.println("Error: Native query fallback也失败了: " + fallbackException.getMessage());
                 throw new IllegalStateException("无法验证申请所有权");
             }
         }
@@ -967,7 +1070,7 @@ public class ApplicationService {
                         throw new IllegalStateException("无法验证申请所有权");
                     }
                 } catch (Exception fallbackException) {
-                    System.err.println("Error: Native query fallback also failed in cancel() method: " + fallbackException.getMessage());
+                    System.err.println("Error: Native query fallback也失败了: " + fallbackException.getMessage());
                     throw new IllegalStateException("无法验证申请所有权");
                 }
             }

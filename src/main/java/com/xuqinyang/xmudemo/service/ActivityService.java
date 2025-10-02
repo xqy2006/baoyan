@@ -71,7 +71,10 @@ public class ActivityService {
     @CacheEvict(value = "activities", allEntries = true)
     public Activity create(Activity a){
         try {
-            Activity saved = distributedLockService.executeWithLockAndRetry("activity:create:" + System.currentTimeMillis(), () -> {
+            // 使用固定的活动创建锁键，确保多个并发的活动创建请求被串行化
+            // 这样可以避免并发创建时可能的资源竞争和缓存一致性问题
+            String lockKey = "activity:create:global";
+            Activity saved = distributedLockService.executeWithLockAndRetry(lockKey, () -> {
                 a.setCreatedAt(LocalDateTime.now());
                 a.setUpdatedAt(LocalDateTime.now());
                 Activity s = activityRepository.saveAndFlush(a);
@@ -83,7 +86,7 @@ public class ActivityService {
                     log.warn("Failed to send activity CREATE message for id {}: {}", s.getId(), me.getMessage());
                 }
                 return s;
-            }, 3);
+            }, 15); // 增加重试次数到15次
 
             // 清理/更新缓存
             try {

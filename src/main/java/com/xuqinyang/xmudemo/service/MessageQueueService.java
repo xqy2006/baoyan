@@ -20,7 +20,28 @@ public class MessageQueueService {
     private final RabbitTemplate rabbitTemplate;
 
     /**
-     * 发送应用处理消息
+     * 发送用户认证消息
+     */
+    public void sendUserAuthMessage(String userId, String action, String ip, String userAgent) {
+        Map<String, Object> message = Map.of(
+                "userId", userId,
+                "action", action,
+                "ip", ip != null ? ip : "",
+                "userAgent", userAgent != null ? userAgent : "",
+                "timestamp", System.currentTimeMillis()
+        );
+
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.DIRECT_EXCHANGE,
+                RabbitMQConfig.USER_AUTH_ROUTING_KEY,
+                message
+        );
+
+        log.info("Sent user auth message: userId={}, action={}", userId, action);
+    }
+
+    /**
+     * 发送应用处理消息 - ApplicationController实际调用
      */
     public void sendApplicationProcessMessage(Long applicationId, String action) {
         Map<String, Object> message = Map.of(
@@ -39,7 +60,7 @@ public class MessageQueueService {
     }
 
     /**
-     * 发送活动处理消息
+     * 发送活动处理消息 - ActivityService实际调用
      */
     public void sendActivityProcessMessage(Long activityId, String action) {
         Map<String, Object> message = Map.of(
@@ -58,7 +79,7 @@ public class MessageQueueService {
     }
 
     /**
-     * 发送文件处理消息
+     * 发送文件处理消息 - FileController实际调用
      */
     public void sendFileProcessMessage(String fileName, String filePath, String action) {
         Map<String, Object> message = Map.of(
@@ -78,7 +99,7 @@ public class MessageQueueService {
     }
 
     /**
-     * 发送通知消息
+     * 发送通知消息 - ApplicationController实际调用
      */
     public void sendNotificationMessage(Long userId, String title, String content, String type) {
         Map<String, Object> message = Map.of(
@@ -99,104 +120,43 @@ public class MessageQueueService {
     }
 
     /**
-     * 发送邮件消息
-     */
-    public void sendEmailMessage(String to, String subject, String content) {
-        Map<String, Object> message = Map.of(
-                "to", to,
-                "subject", subject,
-                "content", content,
-                "timestamp", System.currentTimeMillis()
-        );
-
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.TOPIC_EXCHANGE,
-                RabbitMQConfig.EMAIL_ROUTING_KEY,
-                message
-        );
-
-        log.info("Sent email message: to={}, subject={}", to, subject);
-    }
-
-    /**
-     * 发送用户认证消息
-     */
-    public void sendUserAuthMessage(String userId, String action, String ip, String userAgent) {
-        Map<String, Object> message = Map.of(
-                "userId", userId,
-                "action", action,
-                "ip", ip,
-                "userAgent", userAgent,
-                "timestamp", System.currentTimeMillis()
-        );
-
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.DIRECT_EXCHANGE,
-                RabbitMQConfig.USER_AUTH_ROUTING_KEY,
-                message
-        );
-
-        log.info("Sent user auth message: userId={}, action={}", userId, action);
-    }
-
-    /**
-     * 发送数据统计消息
-     */
-    public void sendDataStatisticsMessage(String type, String operation, Map<String, Object> data) {
-        Map<String, Object> message = Map.of(
-                "type", type,
-                "operation", operation,
-                "data", data,
-                "timestamp", System.currentTimeMillis()
-        );
-
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.TOPIC_EXCHANGE,
-                RabbitMQConfig.DATA_STATISTICS_ROUTING_KEY,
-                message
-        );
-
-        log.info("Sent data statistics message: type={}, operation={}", type, operation);
-    }
-
-    /**
      * 发送审计日志消息
      */
-    public void sendAuditLogMessage(String userId, String action, String resource, String details) {
+    public void sendAuditLogMessage(String userId, String action, String resourceType, String details) {
         Map<String, Object> message = Map.of(
                 "userId", userId,
                 "action", action,
-                "resource", resource,
+                "resourceType", resourceType,
                 "details", details,
                 "timestamp", System.currentTimeMillis()
         );
 
         rabbitTemplate.convertAndSend(
-                RabbitMQConfig.TOPIC_EXCHANGE,
-                RabbitMQConfig.AUDIT_LOG_ROUTING_KEY,
+                RabbitMQConfig.DIRECT_EXCHANGE,
+                RabbitMQConfig.AUDIT_ROUTING_KEY,
                 message
         );
 
-        log.info("Sent audit log message: userId={}, action={}, resource={}", userId, action, resource);
+        log.info("Sent audit log message: userId={}, action={}", userId, action);
     }
 
     /**
-     * 发送系统自动审核消息
+     * 发送数据统计消息
      */
-    public void sendSystemAutoReviewMessage(Long applicationId, String reviewType) {
+    public void sendDataStatisticsMessage(String category, String action, Map<String, Object> data) {
         Map<String, Object> message = Map.of(
-                "applicationId", applicationId,
-                "reviewType", reviewType,
-                "timestamp", System.currentTimeMillis(),
-                "source", "SYSTEM_AUTO_REVIEW"
+                "category", category,
+                "action", action,
+                "data", data,
+                "timestamp", System.currentTimeMillis()
         );
 
         rabbitTemplate.convertAndSend(
                 RabbitMQConfig.DIRECT_EXCHANGE,
-                RabbitMQConfig.SYSTEM_AUTO_REVIEW_ROUTING_KEY,
+                RabbitMQConfig.STATISTICS_ROUTING_KEY,
                 message
         );
 
-        log.info("Sent system auto review message: applicationId={}, reviewType={}", applicationId, reviewType);
+        log.info("Sent data statistics message: category={}, action={}", category, action);
     }
 }

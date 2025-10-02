@@ -102,47 +102,51 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
   },[user]);
 
   return (
-    <div className="p-4 space-y-6 max-w-full">
+    <div className="w-full max-w-7xl mx-auto space-y-4 md:space-y-6 overflow-x-hidden p-3 sm:p-4 md:p-6">
       {/* 欢迎信息 */}
       <Card className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
-        <CardContent className="p-4 sm:p-6">
-          <div className="flex items-center space-x-3 sm:space-x-4">
+        <CardContent className="p-3 sm:p-4 md:p-6">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center flex-shrink-0">
               <GraduationCap className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-lg sm:text-xl mb-1 break-words">厦门大学信息学院推免系统</h2>
-              <p className="text-blue-100 text-sm sm:text-base">2025年推荐免试攻读研究生申请平台</p>
+              <h2 className="text-base sm:text-lg md:text-xl mb-0.5 sm:mb-1 break-words leading-tight">
+                厦门大学信息学院推免系统
+              </h2>
+              <p className="text-blue-100 text-xs sm:text-sm md:text-base leading-tight">
+                2025年推荐免试攻读研究生申请平台
+              </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
         <Card>
-          <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center space-x-2 sm:space-x-3">
+          <CardContent className="p-3 sm:p-4 md:p-5">
+            <div className="flex items-center gap-2">
               <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                 <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-xs sm:text-sm text-gray-600">我的申请</p>
-                <p className="text-lg sm:text-2xl font-semibold">{myStats.total}</p>
+                <p className="text-xs sm:text-sm text-gray-600 truncate">我的申请</p>
+                <p className="text-base sm:text-lg md:text-2xl font-semibold">{myStats.total}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center space-x-2 sm:space-x-3">
+          <CardContent className="p-3 sm:p-4 md:p-5">
+            <div className="flex items-center gap-2">
               <div className="w-8 h-8 sm:w-10 sm:h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
                 <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-xs sm:text-sm text-gray-600">系统通过</p>
-                <p className="text-lg sm:text-2xl font-semibold">{myStats.systemApproved}</p>
+                <p className="text-xs sm:text-sm text-gray-600 truncate">系统通过</p>
+                <p className="text-base sm:text-lg md:text-2xl font-semibold">{myStats.systemApproved}</p>
               </div>
             </div>
           </CardContent>
@@ -152,24 +156,26 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
       {/* 推免时间轴 */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Clock className="w-5 h-5" />
+          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Clock className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
             <span>推免工作进度</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
+          <div className="space-y-2.5 sm:space-y-3">
             {timelineEvents.map((event, index) => (
-              <div key={index} className="flex items-center space-x-3">
-                <div className={`w-3 h-3 rounded-full ${
+              <div key={index} className="flex items-start gap-2 sm:gap-3">
+                <div className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full flex-shrink-0 mt-1.5 ${
                   event.status === 'completed' ? 'bg-green-500' :
                   event.status === 'current' ? 'bg-blue-500' : 'bg-gray-300'
                 }`}></div>
-                <div className="flex-1 flex justify-between items-center">
-                  <span className={`text-sm ${
-                    event.status === 'current' ? 'text-blue-600' : 'text-gray-600'
-                  }`}>{event.event}</span>
-                  <span className="text-xs text-gray-500">{event.date}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-0.5 sm:gap-2">
+                    <span className={`text-xs sm:text-sm break-words ${
+                      event.status === 'current' ? 'text-blue-600 font-medium' : 'text-gray-600'
+                    }`}>{event.event}</span>
+                    <span className="text-xs text-gray-500 flex-shrink-0">{event.date}</span>
+                  </div>
                 </div>
               </div>
             ))}
@@ -180,20 +186,20 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
       {/* 推免申请要求 */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <AlertCircle className="w-5 h-5" />
+          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
             <span>推免基本要求</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-gray-600 mb-4">
+          <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4 break-words">
             根据《厦门大学信息学院推荐优秀应届本科毕业生免试攻读研究生工作实施细则》
           </p>
           <div className="space-y-2">
             {generalRequirements.map((req, i)=>(
-              <div key={i} className="flex items-start space-x-2 text-sm">
-                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-2" />
-                <span className="text-gray-700">{req}</span>
+              <div key={i} className="flex items-start gap-2 text-xs sm:text-sm">
+                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0 mt-1.5" />
+                <span className="text-gray-700 break-words">{req}</span>
               </div>
             ))}
           </div>
@@ -203,16 +209,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
       {/* 推免项目列表 */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Award className="w-5 h-5" />
+          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Award className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
             <span>可申请项目</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {loading && <div className="text-sm text-gray-500">加载中...</div>}
-          {error && <div className="text-sm text-red-600">{error}</div>}
-          {!loading && !error && activities.length===0 && <div className="text-sm text-gray-500">暂无活动</div>}
-          <div className="space-y-4">
+          {loading && <div className="text-xs sm:text-sm text-gray-500">加载中...</div>}
+          {error && <div className="text-xs sm:text-sm text-red-600 break-words">{error}</div>}
+          {!loading && !error && activities.length===0 && <div className="text-xs sm:text-sm text-gray-500">暂无活动</div>}
+          <div className="space-y-3 sm:space-y-4">
             {activities.map((activity) => {
               const existed = appByActivity[activity.id];
               const existedStatus = existed?.status;
@@ -237,41 +243,46 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
               }
               return (
                 <Card key={activity.id} className="border-l-4 border-l-blue-500">
-                  <CardContent className="p-4">
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <h3 className="text-sm mb-1 flex items-center gap-2">{activity.name}{localOnly && <Badge variant="secondary" className="text-[10px]">本地草稿</Badge>}</h3>
-                          <div className="flex items-center space-x-4 text-xs text-gray-500 mb-2">
-                            <span className="flex items-center space-x-1">
-                              <Users className="w-3 h-3" />
-                              <span>{activity.department}</span>
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="space-y-2 sm:space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-sm sm:text-base font-medium mb-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                            <span className="break-words">{activity.name}</span>
+                            {localOnly && <Badge variant="secondary" className="text-[10px] flex-shrink-0">本地草稿</Badge>}
+                          </h3>
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-gray-500 mb-1.5 sm:mb-2">
+                            <span className="flex items-center gap-1">
+                              <Users className="w-3 h-3 flex-shrink-0" />
+                              <span className="break-words">{activity.department}</span>
                             </span>
                             {activity.deadline && (
-                              <span className="flex items-center space-x-1">
-                                <Calendar className="w-3 h-3" />
-                                <span>截止：{activity.deadline}</span>
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3 flex-shrink-0" />
+                                <span className="whitespace-nowrap">截止：{activity.deadline}</span>
                               </span>
                             )}
                           </div>
-                          <Badge variant="outline" className="mb-2">
+                          <Badge variant="outline" className="mb-1.5 sm:mb-2 text-xs">
                             {activity.type}
                           </Badge>
                         </div>
-                        <div className="text-right">
-                          {activity.deadline && <Badge variant="secondary">{activity.deadline}</Badge>}
-                        </div>
                       </div>
 
-                      <p className="text-xs text-gray-600 leading-relaxed">
+                      <p className="text-xs sm:text-sm text-gray-600 leading-relaxed break-words">
                         {activity.description}
                       </p>
 
-                      <Button onClick={() => !inProgress && onApply(activity)} className="w-full" size="sm" disabled={!activity.isActive || inProgress || existedStatus==='APPROVED'}>
+                      <Button 
+                        onClick={() => !inProgress && onApply(activity)} 
+                        className="w-full text-xs sm:text-sm" 
+                        size="sm" 
+                        disabled={!activity.isActive || inProgress || existedStatus==='APPROVED'}
+                      >
                         {activity.isActive? btnLabel:'未开放'}
                       </Button>
                       {(inProgress || existedStatus==='APPROVED') && (
-                        <div className="mt-2 text-[11px] text-gray-500 leading-snug">
+                        <div className="text-[10px] sm:text-[11px] text-gray-500 leading-snug break-words">
                           {existedStatus==='APPROVED' && '该活动申请已通过，不能再提交新的申请。'}
                           {inProgress && existedStatus!=='APPROVED' && '已有进行中的申请，需等待结果或取消后才能重新申请。'}
                         </div>
@@ -288,43 +299,43 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
       {/* 重要提醒 */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Clock className="w-5 h-5" />
+          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Clock className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
             <span>重要提醒</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3 text-sm">
-            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="flex items-start space-x-2">
-                <div className="w-2 h-2 bg-yellow-500 rounded-full mt-2"></div>
-                <div>
-                  <p className="text-yellow-800">
-                    <span className="text-sm">推免综合成绩计算：</span>
+          <div className="space-y-2.5 sm:space-y-3">
+            <div className="p-2.5 sm:p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <div className="w-2 h-2 bg-yellow-500 rounded-full flex-shrink-0 mt-1.5"></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-yellow-800 text-xs sm:text-sm break-words">
+                    <span className="font-medium">推免综合成绩计算：</span>
                     <br />
                     学业综合成绩×80% + 学术专长成绩×15% + 综合表现成绩×5%
                   </p>
                 </div>
               </div>
             </div>
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-start space-x-2">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                <div>
-                  <p className="text-blue-800">
-                    <span className="text-sm">材料准备：</span>
+            <div className="p-2.5 sm:p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1.5"></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-blue-800 text-xs sm:text-sm break-words">
+                    <span className="font-medium">材料准备：</span>
                     <br />
                     请提前准备外语成绩证明、获奖证书、论文发表证明等材料的电子版
                   </p>
                 </div>
               </div>
             </div>
-            <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-start space-x-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                <div>
-                  <p className="text-green-800">
-                    <span className="text-sm">特殊学术专长：</span>
+            <div className="p-2.5 sm:p-3 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0 mt-1.5"></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-green-800 text-xs sm:text-sm break-words">
+                    <span className="font-medium">特殊学术专长：</span>
                     <br />
                     发表A/B类高水平论文或获A+、A类竞赛国家一等奖可申请特殊学术专长推免
                   </p>

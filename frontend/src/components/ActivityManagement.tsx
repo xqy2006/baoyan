@@ -112,9 +112,9 @@ export const ActivityManagement: React.FC = () => {
   };
 
   return (
-    <div className="p-4 space-y-6">
+    <div className="w-full max-w-7xl mx-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
       {/* 页面标题 */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h1>活动管理</h1>
           <p className="text-gray-600 mt-2">管理推免申请活动的时间、参数和状态</p>

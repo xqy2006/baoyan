@@ -66,9 +66,138 @@ public class ApplicationController {
     private EntityManager entityManager;
 
     @GetMapping
-    public List<Application> getAllApplications() {
+    public ResponseEntity<?> getAllApplications() {
         log.debug("Fetching all applications from database");
-        return applicationService.getAllApplications();
+        try {
+            var apps = applicationService.getAllApplications();
+            // 参考mine API的实现，返回包含activityId和activityName的Map列表
+            var out = apps.stream().map(a -> {
+                var m = new java.util.HashMap<String, Object>();
+                m.put("id", a.getId());
+                m.put("status", a.getStatus() == null ? null : a.getStatus().name());
+                m.put("createdAt", a.getCreatedAt());
+                m.put("lastUpdateDate", a.getLastUpdateDate());
+                m.put("submittedAt", a.getSubmittedAt());
+                m.put("systemReviewedAt", a.getSystemReviewedAt());
+                m.put("adminReviewedAt", a.getAdminReviewedAt());
+                m.put("systemReviewComment", a.getSystemReviewComment());
+                m.put("adminReviewComment", a.getAdminReviewComment());
+                m.put("academicScore", a.getAcademicScore());
+                m.put("achievementScore", a.getAchievementScore());
+                m.put("performanceScore", a.getPerformanceScore());
+                m.put("totalScore", a.getTotalScore());
+                m.put("version", a.getVersion());
+
+                // 确保activity信息存在，即使懒加载可能阻止它
+                Long actId = null;
+                String actName = null;
+                try {
+                    if (a.getActivity() != null) {
+                        actId = a.getActivity().getId();
+                        actName = a.getActivity().getName();
+                    }
+                } catch (Exception ignored) {}
+                if (actId == null) actId = a.getActivityId();
+                if (actName == null) actName = a.getActivityName();
+                m.put("activityId", actId);
+                m.put("activityName", actName);
+
+                // 用户信息
+                Long userId = null;
+                String userStudentId = null;
+                String userName = null;
+                try {
+                    if (a.getUser() != null) {
+                        userId = a.getUser().getId();
+                        userStudentId = a.getUser().getStudentId();
+                        userName = a.getUser().getName();
+                    }
+                } catch (Exception ignored) {}
+                if (userId == null) userId = a.getUserId();
+                if (userStudentId == null) userStudentId = a.getUserStudentId();
+                if (userName == null) userName = a.getUserName();
+                m.put("userId", userId);
+                m.put("userStudentId", userStudentId);
+                m.put("userName", userName);
+
+                // 包含内容摘要
+                m.put("content", a.getContent());
+                return m;
+            }).toList();
+            return ResponseEntity.ok(out);
+        } catch (Exception e) {
+            log.error("Error getting all applications: {}", e.getMessage(), e);
+            // 降级处理：如果缓存反序列化失败，尝试清除缓存重试
+            if (e.getCause() instanceof com.fasterxml.jackson.databind.exc.InvalidDefinitionException ||
+                e instanceof org.springframework.data.redis.serializer.SerializationException) {
+
+                log.warn("Cache serialization issue detected for all applications, clearing cache: {}", e.getMessage());
+                try {
+                    cacheService.evictAllApplications();
+                    // 重试一次
+                    var apps = applicationService.getAllApplications();
+                    var out = apps.stream().map(a -> {
+                        var m = new java.util.HashMap<String, Object>();
+                        m.put("id", a.getId());
+                        m.put("status", a.getStatus() == null ? null : a.getStatus().name());
+                        m.put("createdAt", a.getCreatedAt());
+                        m.put("lastUpdateDate", a.getLastUpdateDate());
+                        m.put("submittedAt", a.getSubmittedAt());
+                        m.put("systemReviewedAt", a.getSystemReviewedAt());
+                        m.put("adminReviewedAt", a.getAdminReviewedAt());
+                        m.put("systemReviewComment", a.getSystemReviewComment());
+                        m.put("adminReviewComment", a.getAdminReviewComment());
+                        m.put("academicScore", a.getAcademicScore());
+                        m.put("achievementScore", a.getAchievementScore());
+                        m.put("performanceScore", a.getPerformanceScore());
+                        m.put("totalScore", a.getTotalScore());
+                        m.put("version", a.getVersion());
+
+                        // 活动信息
+                        Long actId = null;
+                        String actName = null;
+                        try {
+                            if (a.getActivity() != null) {
+                                actId = a.getActivity().getId();
+                                actName = a.getActivity().getName();
+                            }
+                        } catch (Exception ignored) {}
+                        if (actId == null) actId = a.getActivityId();
+                        if (actName == null) actName = a.getActivityName();
+                        m.put("activityId", actId);
+                        m.put("activityName", actName);
+
+                        // 用户信息
+                        Long userId = null;
+                        String userStudentId = null;
+                        String userName = null;
+                        try {
+                            if (a.getUser() != null) {
+                                userId = a.getUser().getId();
+                                userStudentId = a.getUser().getStudentId();
+                                userName = a.getUser().getName();
+                            }
+                        } catch (Exception ignored) {}
+                        if (userId == null) userId = a.getUserId();
+                        if (userStudentId == null) userStudentId = a.getUserStudentId();
+                        if (userName == null) userName = a.getUserName();
+                        m.put("userId", userId);
+                        m.put("userStudentId", userStudentId);
+                        m.put("userName", userName);
+
+                        m.put("content", a.getContent());
+                        return m;
+                    }).toList();
+                    return ResponseEntity.ok(out);
+                } catch (Exception retryException) {
+                    log.error("Retry also failed for all applications: {}", retryException.getMessage());
+                    return ResponseEntity.internalServerError()
+                        .body(java.util.Map.of("error", "Failed to load applications: " + retryException.getMessage()));
+                }
+            }
+            return ResponseEntity.internalServerError()
+                .body(java.util.Map.of("error", "Failed to load applications: " + e.getMessage()));
+        }
     }
 
     @GetMapping("/{id}")
@@ -573,7 +702,70 @@ public class ApplicationController {
 
     @PreAuthorize("hasAnyAuthority('ADMIN','REVIEWER')")
     @GetMapping("/review-queue")
-    public ResponseEntity<?> reviewQueue(){ return ResponseEntity.ok(applicationService.reviewQueue()); }
+    public ResponseEntity<?> reviewQueue() {
+        try {
+            var apps = applicationService.reviewQueue();
+            // 参考mine API的实现，返回包含activityId和activityName的Map列表
+            var out = apps.stream().map(a -> {
+                var m = new java.util.HashMap<String, Object>();
+                m.put("id", a.getId());
+                m.put("status", a.getStatus() == null ? null : a.getStatus().name());
+                m.put("createdAt", a.getCreatedAt());
+                m.put("lastUpdateDate", a.getLastUpdateDate());
+                m.put("submittedAt", a.getSubmittedAt());
+                m.put("systemReviewedAt", a.getSystemReviewedAt());
+                m.put("adminReviewedAt", a.getAdminReviewedAt());
+                m.put("systemReviewComment", a.getSystemReviewComment());
+                m.put("adminReviewComment", a.getAdminReviewComment());
+                m.put("academicScore", a.getAcademicScore());
+                m.put("achievementScore", a.getAchievementScore());
+                m.put("performanceScore", a.getPerformanceScore());
+                m.put("totalScore", a.getTotalScore());
+                m.put("version", a.getVersion());
+
+                // 确保activity信息存在，即使懒加载可能阻止它
+                Long actId = null;
+                String actName = null;
+                try {
+                    if (a.getActivity() != null) {
+                        actId = a.getActivity().getId();
+                        actName = a.getActivity().getName();
+                    }
+                } catch (Exception ignored) {}
+                if (actId == null) actId = a.getActivityId();
+                if (actName == null) actName = a.getActivityName();
+                m.put("activityId", actId);
+                m.put("activityName", actName);
+
+                // 用户信息
+                Long userId = null;
+                String userStudentId = null;
+                String userName = null;
+                try {
+                    if (a.getUser() != null) {
+                        userId = a.getUser().getId();
+                        userStudentId = a.getUser().getStudentId();
+                        userName = a.getUser().getName();
+                    }
+                } catch (Exception ignored) {}
+                if (userId == null) userId = a.getUserId();
+                if (userStudentId == null) userStudentId = a.getUserStudentId();
+                if (userName == null) userName = a.getUserName();
+                m.put("userId", userId);
+                m.put("userStudentId", userStudentId);
+                m.put("userName", userName);
+
+                // 包含内容摘要
+                m.put("content", a.getContent());
+                return m;
+            }).toList();
+            return ResponseEntity.ok(out);
+        } catch (Exception e) {
+            log.error("Error getting review queue: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                .body(java.util.Map.of("error", "Failed to load review queue: " + e.getMessage()));
+        }
+    }
 
     @PreAuthorize("hasAuthority('STUDENT')")
     @GetMapping("/activity/{activityId}/mine")

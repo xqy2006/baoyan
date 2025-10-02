@@ -112,10 +112,82 @@ public class AsyncConfig {
     public Executor webAsyncTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
 
-        // Web异 AsyncTask-");
+        // Web异步任务优化
+        executor.setCorePoolSize(10);        // 核心线程数：10
+        executor.setMaxPoolSize(50);         // 最大线程数：50
+        executor.setQueueCapacity(1000);     // 队列容量：1000
+        executor.setKeepAliveSeconds(300);   // 线程空闲时间：5分钟
+
+        executor.setThreadNamePrefix("WebAsyncTask-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(45);
+        executor.initialize();
+        return executor;
+    }
+
+    /**
+     * 活动任务执行器 - 新增
+     * 专门处理活动相关的异步任务
+     */
+    @Bean(name = "activityTaskExecutor")
+    public Executor activityTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+
+        // 活动任务优化
+        executor.setCorePoolSize(12);        // 核心线程数：12
+        executor.setMaxPoolSize(40);         // 最大线程数：40
+        executor.setQueueCapacity(1200);     // 队列容量：1200
+        executor.setKeepAliveSeconds(300);   // 线程空闲时间：5分钟
+
+        executor.setThreadNamePrefix("ActivityTask-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(60);
+        executor.initialize();
+        return executor;
+    }
+
+    /**
+     * 数据统计任务执行器 - 新增
+     * 专门处理数据统计和分析任务
+     */
+    @Bean(name = "statisticsTaskExecutor")
+    public Executor statisticsTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+
+        // 统计任务优化
+        executor.setCorePoolSize(6);         // 核心线程数：6
+        executor.setMaxPoolSize(25);         // 最大线程数：25
+        executor.setQueueCapacity(800);      // 队列容量：800
+        executor.setKeepAliveSeconds(600);   // 线程空闲时间：10分钟
+
+        executor.setThreadNamePrefix("StatisticsTask-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(120);
+        executor.initialize();
+        return executor;
+    }
+
+    /**
+     * 通知任务执行器 - 新增
+     * 专门处理通知和邮件发送任务
+     */
+    @Bean(name = "notificationTaskExecutor")
+    public Executor notificationTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+
+        // 通知任务优化
+        executor.setCorePoolSize(10);        // 核心线程数：10
+        executor.setMaxPoolSize(35);         // 最大线程数：35
+        executor.setQueueCapacity(1500);     // 队列容量：1500
+        executor.setKeepAliveSeconds(300);   // 线程空闲时间：5分钟
+
+        executor.setThreadNamePrefix("NotificationTask-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(60);
         executor.initialize();
         return executor;
     }

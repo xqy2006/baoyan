@@ -33,10 +33,10 @@ export const Account: React.FC<Props> = () => {
   };
 
   return (
-    <div className="p-4 space-y-6">
+    <div className="w-full max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
       <div>
-        <h1>账户管理</h1>
-        <p className="text-gray-600 mt-2">修改个人密码{user && <span className="ml-2 text-xs text-gray-400">({user.role})</span>}</p>
+        <h1 className="text-lg sm:text-xl md:text-2xl font-semibold">账户管理</h1>
+        <p className="text-sm sm:text-base text-gray-600 mt-2">修改个人密码{user && <span className="ml-2 text-xs text-gray-400">({user.role})</span>}</p>
       </div>
       <Card>
         <CardHeader>

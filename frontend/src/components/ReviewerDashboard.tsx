@@ -58,58 +58,58 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = () => {
   };
 
   return (
-    <div className="p-4 space-y-6">
+    <div className="w-full max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-6 overflow-x-hidden p-3 sm:p-4 md:p-6">
       {/* 页面标题 */}
-      <div>
-        <h1>审核员工作台</h1>
-        <p className="text-gray-600 mt-2">厦门大学信息学院推免申请审核系统</p>
+      <div className="min-w-0">
+        <h1 className="text-base sm:text-lg md:text-xl font-semibold break-words">审核员工作台</h1>
+        <p className="text-xs sm:text-sm text-gray-600 mt-1 sm:mt-2 break-words">厦门大学信息学院推免申请审核系统</p>
       </div>
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
         <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <Clock className="h-5 w-5 text-blue-600" />
-              <div>
-                <p className="text-sm text-gray-600">待审核</p>
-                <p className="text-2xl font-semibold">{stats.pendingReview}</p>
+          <CardContent className="p-3 sm:p-4 md:p-5">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-gray-600 truncate">待审核</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-semibold">{stats.pendingReview}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <CheckCircle className="h-5 w-5 text-green-600" />
-              <div>
-                <p className="text-sm text-gray-600">系统通过</p>
-                <p className="text-2xl font-semibold">{stats.systemApproved}</p>
+          <CardContent className="p-3 sm:p-4 md:p-5">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-600 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-gray-600 truncate">系统通过</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-semibold">{stats.systemApproved}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <Users className="h-5 w-5 text-purple-600" />
-              <div>
-                <p className="text-sm text-gray-600">已审核</p>
-                <p className="text-2xl font-semibold">{stats.totalReviewed}</p>
+          <CardContent className="p-3 sm:p-4 md:p-5">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 sm:h-5 sm:w-5 text-purple-600 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-gray-600 truncate">已审核</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-semibold">{stats.totalReviewed}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <TrendingUp className="h-5 w-5 text-orange-600" />
-              <div>
-                <p className="text-sm text-gray-600">平均审核时间</p>
-                <p className="text-2xl font-semibold">{stats.averageReviewTime}</p>
+          <CardContent className="p-3 sm:p-4 md:p-5">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-orange-600 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs sm:text-sm text-gray-600 truncate">平均审核时间</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-semibold">{stats.averageReviewTime}</p>
               </div>
             </div>
           </CardContent>

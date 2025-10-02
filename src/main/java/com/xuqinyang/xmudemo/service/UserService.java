@@ -5,6 +5,7 @@ import com.xuqinyang.xmudemo.model.User;
 import com.xuqinyang.xmudemo.repository.UserRepository;
 import com.xuqinyang.xmudemo.dto.ImportResult;
 import com.xuqinyang.xmudemo.dto.ImportRecord;
+import com.xuqinyang.xmudemo.dto.UserCacheDTO;
 import com.xuqinyang.xmudemo.model.ImportHistory;
 import com.xuqinyang.xmudemo.repository.ImportHistoryRepository;
 import org.apache.poi.ss.usermodel.DataFormatter;
@@ -44,7 +45,13 @@ public class UserService {
     @Transactional
     @CacheEvict(value = "users", allEntries = true)
     public ImportResult importUsersFromExcel(MultipartFile file) throws IOException {
-        return distributedLockService.executeWithLockAndRetry("user:import:" + System.currentTimeMillis(), () -> {
+        // 使用文件名和大小作为锁键，确保相同文件的并发导入被串行化
+        // 这样可以避免重复导入相同文件的问题
+        String fileName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown";
+        long fileSize = file.getSize();
+        String lockKey = "user:import:" + fileName + ":" + fileSize;
+
+        return distributedLockService.executeWithLockAndRetry(lockKey, () -> {
             String filename = file.getOriginalFilename()!=null?file.getOriginalFilename().toLowerCase():"";
             if (filename.endsWith(".xls")) {
                 List<ImportRecord> rec = List.of(new ImportRecord(0, "", "failed", ".xls 旧格式暂不支持，请另存为 .xlsx 或导出为 .csv"));
@@ -68,20 +75,44 @@ public class UserService {
     @CacheEvict(value = "users", allEntries = true)
     public User createUser(User user) {
         return distributedLockService.executeWithLockAndRetry("user:create:" + user.getStudentId(), () -> {
-            // 检查学号是否已存在
-            Optional<User> existing = userRepository.findByStudentId(user.getStudentId());
-            if (existing.isPresent()) {
-                throw new IllegalArgumentException("学号已存在: " + user.getStudentId());
-            }
+            try {
+                // 双重检查：再次检查学号是否已存在（防止并发间隙）
+                Optional<User> existing = userRepository.findByStudentId(user.getStudentId());
+                if (existing.isPresent()) {
+                    throw new IllegalArgumentException("学号已存在: " + user.getStudentId());
+                }
 
-            // 加密密码
-            if (user.getPassword() != null && !user.getPassword().isEmpty()) {
-                user.setPassword(passwordEncoder.encode(user.getPassword()));
-            } else {
-                user.setPassword(passwordEncoder.encode(DEFAULT_PASSWORD));
-            }
+                // 加密密码
+                if (user.getPassword() != null && !user.getPassword().isEmpty()) {
+                    user.setPassword(passwordEncoder.encode(user.getPassword()));
+                } else {
+                    user.setPassword(passwordEncoder.encode(DEFAULT_PASSWORD));
+                }
 
-            return userRepository.save(user);
+                // 尝试保存用户
+                return userRepository.save(user);
+
+            } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                // 处理数据库唯一约束冲突
+                if (e.getMessage() != null && e.getMessage().contains("Duplicate entry")) {
+                    throw new IllegalArgumentException("学号已存在: " + user.getStudentId());
+                } else {
+                    throw new RuntimeException("数据完整性违反: " + e.getMessage(), e);
+                }
+            } catch (org.hibernate.exception.ConstraintViolationException e) {
+                // 处理Hibernate约束违反异常
+                if (e.getConstraintName() != null && e.getConstraintName().contains("student")) {
+                    throw new IllegalArgumentException("学号已存在: " + user.getStudentId());
+                } else {
+                    throw new RuntimeException("约束违反: " + e.getMessage(), e);
+                }
+            } catch (IllegalArgumentException e) {
+                // 重新抛出业务逻辑异常
+                throw e;
+            } catch (Exception e) {
+                // 处理其他未预期的异常
+                throw new RuntimeException("创建用户失败: " + e.getMessage(), e);
+            }
         }, 5);
     }
 
@@ -102,7 +133,7 @@ public class UserService {
             existingUser.setRole(user.getRole());
 
             return userRepository.save(existingUser);
-        }, 5);
+        }, 15);
     }
 
     @Transactional
@@ -123,23 +154,88 @@ public class UserService {
 
             user.setPassword(passwordEncoder.encode(newPassword));
             return userRepository.save(user);
-        }, 3);
+        }, 15); // 增加重试次数到10次
     }
 
-    // 查询方法添加缓存支持
+    // 查询方法 - 使用DTO缓存避免懒加载序列化问题
     @Cacheable(value = "users", key = "'all'")
     public List<User> getAllUsers() {
-        return userRepository.findAll();
+        List<User> users = userRepository.findAll();
+        // 初始化所有用户的roles集合
+        users.forEach(u -> {
+            try {
+                if (u.getRoles() != null) {
+                    u.getRoles().size();
+                    u.setRoles(new java.util.HashSet<>(u.getRoles()));
+                } else {
+                    u.setRoles(new java.util.HashSet<>());
+                }
+            } catch (Exception e) {
+                u.setRoles(new java.util.HashSet<>());
+            }
+        });
+        return users;
     }
 
-    @Cacheable(value = "users", key = "#id")
-    public Optional<User> getUserById(Long id) {
-        return userRepository.findById(id);
+    @Transactional(readOnly = true)
+    @Cacheable(value = "userDTO", key = "#id")
+    public Optional<User> findById(Long id) {
+        Optional<User> user = userRepository.findById(id);
+        if (user.isEmpty()) {
+            return Optional.empty();
+        }
+
+        User u = user.get();
+        // 彻底初始化懒加载关系
+        try {
+            if (u.getRoles() != null) {
+                u.getRoles().size(); // 触发初始化
+                u.setRoles(new java.util.HashSet<>(u.getRoles()));
+            } else {
+                u.setRoles(new java.util.HashSet<>());
+            }
+        } catch (Exception e) {
+            System.err.println("警告：初始化用户角色失败: " + e.getMessage());
+            u.setRoles(new java.util.HashSet<>());
+        }
+
+        return Optional.of(u);
     }
 
-    @Cacheable(value = "users", key = "'studentId_' + #studentId")
+    @Transactional(readOnly = true)
+    @Cacheable(value = "userDTO", key = "#studentId")
+    public Optional<User> findByStudentId(String studentId) {
+        Optional<User> user = userRepository.findByStudentId(studentId);
+        if (user.isEmpty()) {
+            return Optional.empty();
+        }
+
+        User u = user.get();
+        // 彻底初始化懒加载关系，避免缓存序列化问题
+        try {
+            if (u.getRoles() != null) {
+                u.getRoles().size(); // 触发初始化
+                // 创建全新的HashSet，完全脱离Hibernate代理
+                Set<com.xuqinyang.xmudemo.model.Role> newRoles = new java.util.HashSet<>();
+                for (com.xuqinyang.xmudemo.model.Role role : u.getRoles()) {
+                    newRoles.add(role);
+                }
+                u.setRoles(newRoles);
+            } else {
+                u.setRoles(new java.util.HashSet<>());
+            }
+        } catch (Exception e) {
+            System.err.println("警告：初始化用户角色失败 (studentId=" + studentId + "): " + e.getMessage());
+            u.setRoles(new java.util.HashSet<>());
+        }
+
+        return Optional.of(u);
+    }
+
+    // Alias method for backward compatibility with tests
+    @Transactional(readOnly = true)
     public Optional<User> getUserByStudentId(String studentId) {
-        return userRepository.findByStudentId(studentId);
+        return findByStudentId(studentId);
     }
 
     private ImportResult importFromXlsx(MultipartFile file) throws IOException {
@@ -377,6 +473,7 @@ public class UserService {
         // 为每个用户的创建/更新添加锁保护
         distributedLockService.executeWithLockAndRetry("user:upsert:" + studentId, () -> {
             try {
+                // 再次检查是否存在，防止并发创建
                 Optional<User> existing = userRepository.findByStudentId(studentId);
                 Role role = Role.STUDENT;
                 if (!isBlank(roleStr)) {
@@ -418,18 +515,35 @@ public class UserService {
                     if (total != null) user.setMajorTotal(total);
                     status = "created";
                 }
-                userRepository.save(user);
-                ImportRecord rec = new ImportRecord(rowNumber, studentId, status, "成功");
-                rec.setName(user.getName());
-                records.add(rec);
+
+                // 使用try-catch处理可能的数据库约束冲突
+                try {
+                    userRepository.save(user);
+                    ImportRecord rec = new ImportRecord(rowNumber, studentId, status, "成功");
+                    rec.setName(user.getName());
+                    records.add(rec);
+                } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                    // 处理唯一约束冲突
+                    if (e.getMessage().contains("Duplicate entry")) {
+                        ImportRecord rec = new ImportRecord(rowNumber, studentId, "skipped", "学号已存在，跳过创建");
+                        rec.setName(name);
+                        records.add(rec);
+                    } else {
+                        throw e;
+                    }
+                } catch (Exception e) {
+                    ImportRecord rec = new ImportRecord(rowNumber, studentId, "failed", "保存失败: " + e.getMessage());
+                    rec.setName(name);
+                    records.add(rec);
+                }
 
             } catch (Exception e) {
-                ImportRecord rec = new ImportRecord(rowNumber, studentId, "failed", "保存失败: " + e.getMessage());
+                ImportRecord rec = new ImportRecord(rowNumber, studentId, "failed", "处理失败: " + e.getMessage());
                 rec.setName(name);
                 records.add(rec);
             }
             return null;
-        }, 3);
+        }, 5); // 增加重试次数到5次
     }
 
     private String getCell(DataFormatter formatter, Row row, Map<String,Integer> headerIndex, List<String> candidates) {

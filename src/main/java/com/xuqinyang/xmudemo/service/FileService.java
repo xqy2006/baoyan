@@ -40,7 +40,13 @@ public class FileService {
 
     @Transactional
     public FileMetadata store(MultipartFile file) throws IOException {
-        return distributedLockService.executeWithLockAndRetry("file:upload:" + System.currentTimeMillis(), () -> {
+        // 使用文件名、大小作为锁键，确保相同用户上传相同文件的并发请求被串行化
+        // 这样可以避免重复上传相同文件的问题
+        String fileName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown";
+        long fileSize = file.getSize();
+        String lockKey = "file:upload:" + ":" + fileName + ":" + fileSize;
+
+        return distributedLockService.executeWithLockAndRetry(lockKey, () -> {
             if (file.isEmpty()) throw new IllegalArgumentException("文件为空");
 
             String original = file.getOriginalFilename();

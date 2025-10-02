@@ -133,33 +133,33 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
   };
 
   return (
-    <div className="p-4 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg">{user.role === 'ADMIN' ? '推免申请审核' : (user.role==='STUDENT'? '我的推免申请':'审核队列')}</h1>
-          <p className="text-sm text-gray-600">{user.role === 'ADMIN' ? '厦门大学信息学院推免申请管理' : '查看申请状态和详细信息'}</p>
+    <div className="w-full max-w-6xl mx-auto space-y-4 overflow-x-hidden p-3 sm:p-4 md:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-base sm:text-lg md:text-xl font-semibold break-words">{user.role === 'ADMIN' ? '推免申请审核' : (user.role==='STUDENT'? '我的推免申请':'审核队列')}</h1>
+          <p className="text-xs sm:text-sm text-gray-600 break-words">{user.role === 'ADMIN' ? '厦门大学信息学院推免申请管理' : '查看申请状态和详细信息'}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">{loading? '加载中...' : `共 ${applications.length} 个申请`}</span>
-          {isAdmin && applications.length>0 && <Button size="sm" variant="outline" onClick={()=>exportApplicationsExcel(applications)}>导出Excel</Button>}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs sm:text-sm text-gray-500 whitespace-nowrap">{loading? '加载中...' : `共 ${applications.length} 个申请`}</span>
+          {isAdmin && applications.length>0 && <Button size="sm" variant="outline" onClick={()=>exportApplicationsExcel(applications)}><span className="text-xs sm:text-sm">导出Excel</span></Button>}
         </div>
       </div>
       {isAdmin && applications.length>0 && (
         <div className="text-xs text-gray-500 pb-1">显示列：学业综合(0-80) / 学术专长(0-15) / 综合表现(0-5) / 总成绩(0-100)</div>
       )}
       {error && <div className="text-sm text-red-600">{error}</div>}
-      <div className="space-y-4">
+      <div className="space-y-3 sm:space-y-4">
         {applications.map(application => {
           const statusInfo = getStatusInfo(application.status);
           const StatusIcon = statusInfo.icon;
           return (
             <Card key={application.id} className="border-l-4 border-l-blue-500">
-              <CardContent className="p-4">
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <h3 className="text-sm">{application.activityName}</h3>
+              <CardContent className="p-3 sm:p-4">
+                <div className="space-y-2.5 sm:space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1">
+                        <h3 className="text-sm sm:text-base font-medium break-words">{application.activityName}</h3>
                         {application.specialAcademicTalent?.isApplying && (
                           <Badge variant="secondary" className="text-xs">特殊学术专长</Badge>
                         )}
@@ -169,14 +169,14 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
                           <p>申请人：{application.studentName} ({application.studentId})</p>
                         </div>
                       )}
-                      <div className="flex items-center flex-wrap gap-3 text-xs text-gray-500">
-                        <span className="flex items-center space-x-1"><Calendar className="w-3 h-3" /><span>{application.submittedAt? `提交于 ${application.submittedAt}`:'未提交'}</span></span>
-                        <span className="flex items-center space-x-1"><FileText className="w-3 h-3" /><span>状态: {statusInfo.text}</span></span>
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-gray-500">
+                        <span className="flex items-center gap-1"><Calendar className="w-3 h-3 flex-shrink-0" /><span className="break-words">{application.submittedAt? `提交于 ${application.submittedAt}`:'未提交'}</span></span>
+                        <span className="flex items-center gap-1"><FileText className="w-3 h-3 flex-shrink-0" /><span>状态: {statusInfo.text}</span></span>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Badge variant={statusInfo.color as any} className={statusInfo.className}>{statusInfo.text}</Badge>
-                      <Button size="sm" variant="outline" onClick={()=> onReview && onReview(application)}>详情</Button>
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <Badge variant={statusInfo.color as any} className={`${statusInfo.className} text-[10px] sm:text-xs`}>{statusInfo.text}</Badge>
+                      <Button size="sm" variant="outline" onClick={()=> onReview && onReview(application)}><span className="text-xs sm:text-sm">详情</span></Button>
                       {(isAdmin || isReviewer) && (application.status==='approved' || application.status==='rejected') && (
                         <Button size="sm" variant="outline" className="whitespace-nowrap" onClick={()=> setReopenDialogId(application.id)}>重新审核</Button>
                       )}
@@ -189,23 +189,25 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
                     </div>
                   </div>
                   {(isAdmin || isReviewer) && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {application.status==='system_reviewing' && <Button size="xs" variant="outline" onClick={()=>handleSystemReview(application.id)}>系统审核</Button>}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap">
+                      {application.status==='system_reviewing' && <Button size="sm" variant="outline" onClick={()=>handleSystemReview(application.id)}><span className="text-xs sm:text-sm">系统审核</span></Button>}
                       {application.status==='admin_reviewing' && (
                         <>
-                          <Input placeholder="审核意见(拒绝必填)" value={reviewComments[application.id]||''} onChange={e=> setReviewComments(m=>({...m,[application.id]:e.target.value}))} className="h-8 w-52" />
-                          <Button
-                            size="sm"
-                            className="min-w-[64px]"
-                            onClick={()=>handleAdminApprove(application.id)}
-                          >通过</Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            aria-label="拒绝申请"
-                            className="min-w-[64px]"
-                            onClick={()=>handleAdminReject(application.id)}
-                          >拒绝</Button>
+                          <Input placeholder="审核意见(拒绝必填)" value={reviewComments[application.id]||''} onChange={e=> setReviewComments(m=>({...m,[application.id]:e.target.value}))} className="h-8 text-xs sm:text-sm w-full sm:w-52" />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              className="min-w-[64px] flex-1 sm:flex-initial"
+                              onClick={()=>handleAdminApprove(application.id)}
+                            ><span className="text-xs sm:text-sm">通过</span></Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              aria-label="拒绝申请"
+                              className="min-w-[64px] flex-1 sm:flex-initial"
+                              onClick={()=>handleAdminReject(application.id)}
+                            ><span className="text-xs sm:text-sm">拒绝</span></Button>
+                          </div>
                         </>
                       )}
                       {isAdmin && application.status!=='approved' && application.status!=='cancelled' && application.status!=='admin_reviewing' && application.status!=='system_reviewing' && application.status!=='system_approved' && application.status!=='rejected' && <Button size="xs" variant="outline" onClick={()=>handleCancel(application.id, (application as any).activityId)}>取消</Button>}

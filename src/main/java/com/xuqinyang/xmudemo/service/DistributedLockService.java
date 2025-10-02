@@ -22,7 +22,7 @@ public class DistributedLockService {
     private final RedisTemplate<String, Object> redisTemplate;
 
     private static final String LOCK_PREFIX = "lock:";
-    private static final long DEFAULT_EXPIRE_TIME = 30; // 默认30秒过期
+    private static final long DEFAULT_EXPIRE_TIME = 30; // 增加到30秒过期时间
     private static final long WATCH_DOG_INTERVAL = 10; // watch-dog续租间隔10秒
 
     // 用于存储锁信息，支持watch-dog
@@ -30,6 +30,9 @@ public class DistributedLockService {
     // 用于跟踪重入锁计数
     private final ThreadLocal<Map<String, Integer>> threadLockCounts = ThreadLocal.withInitial(ConcurrentHashMap::new);
     private final ScheduledExecutorService watchDogExecutor = Executors.newScheduledThreadPool(2);
+
+    // 锁竞争统计，用于动态调整重试策略
+    private final Map<String, Integer> lockContentionStats = new ConcurrentHashMap<>();
 
     // Lua脚本：原子性释放锁
     private static final String UNLOCK_SCRIPT =
@@ -218,49 +221,85 @@ public class DistributedLockService {
     public <T> T executeWithLock(String key, long expireTime, TimeUnit timeUnit, LockCallback<T> callback, int maxRetries) {
         int attempts = 0;
         Exception lastException = null;
+        long startTime = System.currentTimeMillis();
 
         while (attempts < maxRetries) {
-            attempts++; // 移动到循环开始，确保attempts正确计数
+            attempts++;
 
-            if (tryLock(key, expireTime, timeUnit)) {
-                try {
-                    return callback.execute();
-                } catch (org.springframework.orm.ObjectOptimisticLockingFailureException e) {
-                    lastException = e;
-                    log.warn("Optimistic lock failure, attempt {}/{}: {}", attempts, maxRetries, e.getMessage());
+            boolean lockAcquired = false;
+            try {
+                lockAcquired = tryLock(key, expireTime, timeUnit);
+
+                if (lockAcquired) {
+                    log.debug("Lock acquired successfully: {} (attempt {}/{})", key, attempts, maxRetries);
+                    try {
+                        T result = callback.execute();
+                        log.debug("Operation completed successfully with lock: {} (total time: {}ms)",
+                            key, System.currentTimeMillis() - startTime);
+                        return result;
+                    } catch (org.springframework.orm.ObjectOptimisticLockingFailureException e) {
+                        lastException = e;
+                        log.warn("Optimistic lock failure for key: {}, attempt {}/{}: {}",
+                            key, attempts, maxRetries, e.getMessage());
+
+                        if (attempts < maxRetries) {
+                            // 乐观锁失败，随机延迟后重试
+                            long delay = 50 + (long)(Math.random() * 100);
+                            log.debug("Retrying after optimistic lock failure, delay: {}ms", delay);
+                            Thread.sleep(delay);
+                        }
+                    } catch (IllegalArgumentException | IllegalStateException e) {
+                        // 业务逻辑异常，不应该重试，直接抛出
+                        log.debug("Business logic exception with lock: {} - {}", key, e.getMessage());
+                        throw e;
+                    } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                        // 数据完整性约束异常，不应该重试
+                        log.debug("Data integrity violation with lock: {} - {}", key, e.getMessage());
+                        throw e;
+                    } catch (Exception e) {
+                        // 其他异常直接抛出，不重试
+                        log.error("Unexpected error during operation with lock: {}", key, e);
+                        throw new RuntimeException("Operation failed with lock: " + key + " - " + e.getMessage(), e);
+                    }
+                } else {
+                    // 获取锁失败
+                    lastException = new RuntimeException("Failed to acquire distributed lock: " + key);
+                    log.debug("Failed to acquire lock: {} (attempt {}/{})", key, attempts, maxRetries);
 
                     if (attempts < maxRetries) {
-                        try {
-                            Thread.sleep(50 + (int)(Math.random() * 100)); // 随机延迟重试
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            throw new RuntimeException("Interrupted during retry", ie);
-                        }
-                    }
-                } catch (Exception e) {
-                    throw new RuntimeException("Error executing with lock: " + key, e);
-                } finally {
-                    unlock(key);
-                }
-            } else {
-                // 获取锁失败，记录并准备重试
-                log.warn("Failed to acquire lock: {}, attempt {}/{}", key, attempts, maxRetries);
-                lastException = new RuntimeException("Failed to acquire distributed lock");
+                        // 指数退避 + 随机抖动，减少锁竞争
+                        long baseDelay = Math.min(1000, 100 * (1L << (attempts - 1))); // 指数退避，最大1秒
+                        long jitter = (long)(Math.random() * 100); // 随机抖动
+                        long delay = baseDelay + jitter;
 
-                if (attempts < maxRetries) {
+                        log.debug("Retrying lock acquisition for: {}, delay: {}ms", key, delay);
+                        Thread.sleep(delay);
+                    }
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while waiting for lock: " + key, ie);
+            } finally {
+                if (lockAcquired) {
                     try {
-                        // 等待一段时间后重试，时间递增
-                        Thread.sleep(100 + attempts * 50 + (int)(Math.random() * 100));
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("Interrupted during lock acquisition retry", ie);
+                        unlock(key);
+                        log.debug("Lock released: {}", key);
+                    } catch (Exception e) {
+                        log.error("Failed to release lock: {}", key, e);
                     }
                 }
             }
         }
 
         // 所有重试都失败了
-        throw new RuntimeException("Failed to acquire lock: " + key + " after " + attempts + " attempts", lastException);
+        String errorMsg = String.format("Failed to execute operation with lock: %s after %d attempts (total time: %dms)",
+            key, attempts, System.currentTimeMillis() - startTime);
+
+        if (lastException instanceof org.springframework.orm.ObjectOptimisticLockingFailureException) {
+            throw new RuntimeException(errorMsg + " - Persistent optimistic locking conflicts", lastException);
+        } else {
+            throw new RuntimeException(errorMsg + " - Unable to acquire lock", lastException);
+        }
     }
 
     /**
@@ -271,14 +310,21 @@ public class DistributedLockService {
     }
 
     /**
-     * 带锁执行操作（自定义重试次数）
+     * 带锁执行操作并重试（兼容性方法）
      */
     public <T> T executeWithLockAndRetry(String key, LockCallback<T> callback, int maxRetries) {
         return executeWithLock(key, DEFAULT_EXPIRE_TIME, TimeUnit.SECONDS, callback, maxRetries);
     }
 
     /**
-     * 锁回调接口
+     * 带锁执行操作并重试（默认重试5次，适用于高并发场景）
+     */
+    public <T> T executeWithLockAndRetry(String key, LockCallback<T> callback) {
+        return executeWithLockAndRetry(key, callback, 5);
+    }
+
+    /**
+     * 回调接口
      */
     @FunctionalInterface
     public interface LockCallback<T> {

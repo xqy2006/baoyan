@@ -53,69 +53,69 @@ export const AdminDashboard: React.FC = () => {
   },[]);
 
   return (
-    <div className="p-4 space-y-6">
+    <div className="w-full max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-6 overflow-x-hidden p-3 sm:p-4 md:p-6">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl mb-1">推免审核管理</h1>
-          <p className="text-sm text-gray-600">厦门大学信息学院推免工作管理平台</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-base sm:text-lg md:text-xl font-semibold break-words">推免审核管理</h1>
+          <p className="text-xs sm:text-sm text-gray-600 break-words">厦门大学信息学院推免工作管理平台</p>
         </div>
       </div>
-      {loading && <div className='text-sm text-gray-500'>加载中...</div>}
-      {error && <div className='text-sm text-red-600'>{error}</div>}
+      {loading && <div className='text-xs sm:text-sm text-gray-500'>加载中...</div>}
+      {error && <div className='text-xs sm:text-sm text-red-600 break-words'>{error}</div>}
       {stats && (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 md:gap-4">
           <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-blue-600" />
+            <CardContent className="p-3 sm:p-4 md:p-5">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">总申请数</p>
-                  <p className="text-2xl">{stats.totalApplications}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm text-gray-600 truncate">总申请数</p>
+                  <p className="text-lg sm:text-xl md:text-2xl font-semibold">{stats.totalApplications}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-orange-600" />
+            <CardContent className="p-3 sm:p-4 md:p-5">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">待管理员审核</p>
-                  <p className="text-2xl">{stats.pendingAdminReview}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">最终通过</p>
-                  <p className="text-2xl">{stats.finalApproved}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm text-gray-600 truncate">待管理员审核</p>
+                  <p className="text-lg sm:text-xl md:text-2xl font-semibold">{stats.pendingAdminReview}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                  <XCircle className="w-5 h-5 text-red-600" />
+            <CardContent className="p-3 sm:p-4 md:p-5">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">已拒绝</p>
-                  <p className="text-2xl">{stats.finalRejected}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm text-gray-600 truncate">最终通过</p>
+                  <p className="text-lg sm:text-xl md:text-2xl font-semibold">{stats.finalApproved}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-3 sm:p-4 md:p-5">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <XCircle className="w-4 h-4 sm:w-5 sm:h-5 text-red-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm text-gray-600 truncate">已拒绝</p>
+                  <p className="text-lg sm:text-xl md:text-2xl font-semibold">{stats.finalRejected}</p>
                 </div>
               </div>
             </CardContent>

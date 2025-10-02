@@ -44,9 +44,9 @@ public class UserController {
     @Autowired
     private PasswordEncoder passwordEncoder;
     @Autowired
-    private ImportHistoryRepository importHistoryRepository;
-    @Autowired
     private DistributedLockService distributedLockService;
+    @Autowired
+    private ImportHistoryRepository importHistoryRepository;
 
     @PreAuthorize("hasAuthority('ADMIN')")
     @PostMapping("/import")
@@ -117,23 +117,24 @@ public class UserController {
     @PostMapping("")
     @CacheEvict(value = "users", allEntries = true)
     public ResponseEntity<?> createUser(@RequestBody CreateUserRequest req) {
-        String lockKey = "user:create:" + req.getStudentId();
-
-        return distributedLockService.executeWithLockAndRetry(lockKey, () -> {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             log.info("[USER][CREATE] studentId={} role={}", req.getStudentId(), req.getRole());
+
             if (req.getStudentId()==null || req.getStudentId().isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of("error","学号不能为空"));
-            }
-            if (userRepository.findByStudentId(req.getStudentId()).isPresent()) {
-                return ResponseEntity.badRequest().body(Map.of("error","学号已存在"));
             }
             if (req.getPassword()==null || req.getPassword().length()<4) {
                 return ResponseEntity.badRequest().body(Map.of("error","密码至少4位"));
             }
+
             Role role;
-            try { role = Role.valueOf(req.getRole().toUpperCase()); } catch (Exception e) {
+            try {
+                role = Role.valueOf(req.getRole().toUpperCase());
+            } catch (Exception e) {
                 return ResponseEntity.badRequest().body(Map.of("error","角色无效"));
             }
+
             if (role==Role.STUDENT) {
                 if (req.getName()==null || req.getName().isBlank() ||
                     req.getDepartment()==null || req.getDepartment().isBlank() ||
@@ -141,27 +142,38 @@ public class UserController {
                     return ResponseEntity.badRequest().body(Map.of("error","学生必须填写姓名/学院/专业"));
                 }
             }
+
             User u = new User();
             u.setStudentId(req.getStudentId());
-            u.setPassword(passwordEncoder.encode(req.getPassword()));
-            u.setRoles(Set.of(role));
+            u.setPassword(req.getPassword()); // UserService会处理加密
+            u.setRole(role);
             u.setName(req.getName());
             u.setDepartment(req.getDepartment());
             u.setMajor(req.getMajor());
-            userRepository.save(u);
-            log.info("[USER][CREATE] success studentId={} role={}", u.getStudentId(), role);
+
+            // 使用UserService而不是直接操作repository
+            User savedUser = userService.createUser(u);
+
+            log.info("[USER][CREATE] success studentId={} role={}", savedUser.getStudentId(), role);
             Map<String,Object> resp = new HashMap<>();
-            resp.put("studentId", u.getStudentId());
-            resp.put("name", u.getName());
-            resp.put("department", u.getDepartment());
-            resp.put("major", u.getMajor());
-            resp.put("gpa", u.getGpa());
-            resp.put("academicRank", u.getAcademicRank());
-            resp.put("majorTotal", u.getMajorTotal());
-            resp.put("roles", u.getRoles());
+            resp.put("studentId", savedUser.getStudentId());
+            resp.put("name", savedUser.getName());
+            resp.put("department", savedUser.getDepartment());
+            resp.put("major", savedUser.getMajor());
+            resp.put("gpa", savedUser.getGpa());
+            resp.put("academicRank", savedUser.getAcademicRank());
+            resp.put("majorTotal", savedUser.getMajorTotal());
+            resp.put("roles", savedUser.getRoles());
             resp.put("role", role);
             return ResponseEntity.ok(resp);
-        }, 5);
+
+        } catch (IllegalArgumentException e) {
+            log.warn("[USER][CREATE] validation error: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("[USER][CREATE] unexpected error: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of("error", "创建用户失败: " + e.getMessage()));
+        }
     }
 
     @PreAuthorize("hasAuthority('ADMIN')")
