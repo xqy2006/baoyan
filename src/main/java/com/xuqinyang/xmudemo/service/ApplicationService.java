@@ -521,7 +521,12 @@ public class ApplicationService {
             JsonNode root = parseContent(app.getContent()); JsonNode basic = root.path("basicInfo");
             line(cs,font0,12,String.format("姓名: %s 学号: %s", basic.path("name").asText("-"), basic.path("studentId").asText("-")), margin,y); y-=lh;
             line(cs,font0,12,String.format("系别: %s 专业: %s", basic.path("department").asText("-"), basic.path("major").asText("-")), margin,y); y-=lh;
-            line(cs,font0,12,String.format("GPA: %s 排名: %s/%s", basic.path("gpa").asText(""), basic.path("academicRanking").asText(""), basic.path("totalStudents").asText("")), margin,y); y-=lh*1.5;
+            line(cs,font0,12,String.format("GPA: %s 排名: %s/%s", basic.path("gpa").asText(""), basic.path("academicRanking").asText(""), basic.path("totalStudents").asText("")), margin,y); y-=lh;
+            // Add converted score if present
+            if (basic.has("convertedScore") && !basic.path("convertedScore").asText("").isEmpty()) {
+                line(cs,font0,12,String.format("换算后的成绩: %s", basic.path("convertedScore").asText("-")), margin,y); y-=lh;
+            }
+            y-=lh*0.5;
             y = section(cs,font0,"个人陈述", root.path("personalStatement").asText("(未填写)"), margin,y,lh,width);
 
             // ==== 重写：使用可变上下文对象避免 lambda 修改局部变量导致的编译错误 ====
@@ -715,17 +720,24 @@ public class ApplicationService {
     }
 
     private void recalcScores(Application app){
-        double academicBase = computeAcademicBaseFromApp(app); // 0-80
-        double specRaw = 0; double perfRaw = 0; boolean defensePassed = false;
+        // 推免综合成绩 = 学业综合成绩×80% + 学术专长成绩(15分) + 综合表现成绩(5分)
+        double academicBase = computeAcademicBaseFromApp(app); // 学业综合成绩×80% = 0-80分
+        double specRaw = 0; // 学术专长成绩 0-15分
+        double perfRaw = 0; // 综合表现成绩 0-5分
+        boolean defensePassed = false;
         Double rankScoreDetail=null,gpaScoreDetail=null,convertedDetail=null;
+
         try {
             JsonNode root = app.getContent()==null? MAPPER.createObjectNode(): MAPPER.readTree(app.getContent());
             JsonNode basicInfo = root.path("basicInfo");
+
+            // 获取换算后的成绩详情
             if(basicInfo.hasNonNull("convertedScore")) convertedDetail = basicInfo.path("convertedScore").asDouble();
             else if(basicInfo.hasNonNull("percentageScore")) convertedDetail = basicInfo.path("percentageScore").asDouble();
             else if(basicInfo.hasNonNull("averageScore100")) convertedDetail = basicInfo.path("averageScore100").asDouble();
+
             if(convertedDetail==null){
-                // derive rank & GPA components for detail (duplicate of computeAcademicBaseFromApp logic for transparency)
+                // 从GPA和排名推导详情
                 Double gpa=null; Integer rank=null,total=null;
                 if(basicInfo.hasNonNull("gpa")) gpa = basicInfo.path("gpa").asDouble();
                 if(basicInfo.hasNonNull("academicRanking")) rank = basicInfo.path("academicRanking").asInt();
@@ -733,80 +745,300 @@ public class ApplicationService {
                 if(rank!=null && total!=null && total>0){ rankScoreDetail = ((double)(total - rank +1)/ total)*80.0; }
                 if(gpa!=null){ gpaScoreDetail = Math.min(gpa/4.0,1.0)*80.0; }
             }
+
+            // ========== 学术专长成绩计算 (满分15分) ==========
             JsonNode talent = root.path("specialAcademicTalent");
             defensePassed = talent.path("defensePassed").asBoolean(false);
+
             JsonNode acad = root.path("academicAchievements");
-            int cCount=0; double publicationScore=0.0;
+
+            // 1. 科研成果 - 论文
+            int cCount=0;
+            double publicationScore=0.0;
             for(JsonNode p: acad.path("publications")){
                 if(!p.hasNonNull("title")) continue;
                 String type=p.path("type").asText("");
                 String journal = p.path("journal").asText("");
                 String full = (journal+" "+p.path("title").asText("")).toLowerCase();
-                boolean top = full.contains("nature") || full.contains("science") || full.contains("cell ") || full.equals("cell") || journal.equalsIgnoreCase("Cell");
+
+                // 判断顶级期刊
+                boolean top = full.contains("nature") || full.contains("science") ||
+                             full.contains("cell ") || full.equals("cell") || journal.equalsIgnoreCase("Cell");
+
                 double base=0;
-                if(top) base=20; else switch(type){ case "A类": base=10; break; case "B类": base=6; break; case "C类": if(cCount<2){ base=1; cCount++; } break; case "高水平中文": base=6; break; case "信息通信工程": base=10; break; default: base=0; }
+                if(top) {
+                    base=20; // Nature/Science/Cell及子刊(IF≥10)
+                } else {
+                    switch(type){
+                        case "A类": base=10; break;
+                        case "B类": base=6; break;
+                        case "C类":
+                            if(cCount<2){ // C类最多2篇
+                                base=1;
+                                cCount++;
+                            }
+                            break;
+                        case "高水平中文": base=6; break;
+                        case "信息通信工程": base=10; break;
+                        default: base=0;
+                    }
+                }
+
                 if(base==0) continue;
+
+                // 作者排名系数计算
                 int totalAuthors = p.path("totalAuthors").asInt(1);
                 int authorRank = p.path("authorRank").asInt(1);
                 boolean coFirst = p.path("isCoFirst").asBoolean(false);
+
                 double ratio;
-                if(totalAuthors<=1) ratio=1; else if(coFirst && (authorRank==1||authorRank==2)) ratio=0.5; else if(authorRank==1) ratio=0.8; else if(authorRank==2) ratio=0.2; else ratio=0;
+                if(totalAuthors<=1) {
+                    ratio=1; // 独立作者100%
+                } else if(coFirst && (authorRank==1||authorRank==2)) {
+                    ratio=0.5; // 共同第一各50%
+                } else if(authorRank==1) {
+                    ratio=0.8; // 除导师外第一作者80%
+                } else if(authorRank==2) {
+                    ratio=0.2; // 除导师外第二作者20%
+                } else {
+                    ratio=0; // 其他不计分
+                }
+
                 publicationScore += base*ratio;
             }
+
+            // 2. 科研成果 - 专利 (每项2分)
             double patentScore=0.0;
             for(JsonNode pt: acad.path("patents")){
-                if(!pt.hasNonNull("title")) continue; int rank= pt.path("authorRank").asInt(1); int total=pt.path("totalAuthors").asInt(1); if(rank==1){ patentScore += (total<=1)?2:1.6; }
+                if(!pt.hasNonNull("title")) continue;
+                int rank= pt.path("authorRank").asInt(1);
+                int total=pt.path("totalAuthors").asInt(1);
+                if(rank==1){
+                    patentScore += (total<=1)?2:1.6; // 独立作者100%(2分)，第一作者80%(1.6分)
+                }
             }
+
+            // 3. 学业竞赛 (最多取3项)
             double competitionScore = computeCompetitionScore(acad.path("competitions"));
-            double innovationScore=0.0; for(JsonNode ip: acad.path("innovationProjects")){ if(!"已结项".equals(ip.path("status").asText())) continue; String level=ip.path("level").asText(""); String role=ip.path("role").asText(""); double add=0; switch(level){case "国家级": add="组长".equals(role)?1:0.3; break; case "省级": add="组长".equals(role)?0.5:0.2; break; case "校级": add="组长".equals(role)?0.1:0.05; break; default: add=0;} innovationScore+=add; }
-            if(innovationScore>2) innovationScore=2;
-            specRaw = defensePassed? 15 : Math.min(15, publicationScore + patentScore + competitionScore + innovationScore); // 直接 0-15
-            JsonNode comp = root.path("comprehensivePerformance");
-            double volunteerHours = comp.path("volunteerService").path("hours").asDouble(0);
-            JsonNode segments = comp.path("volunteerService").path("segments");
-            if(segments.isArray() && segments.size()>0){ double effective=0; for(JsonNode seg: segments){ double h= seg.path("hours").asDouble(0); String t= seg.path("type").asText("normal"); effective += ("normal".equals(t)? h: h/2.0); } volunteerHours = effective; }
-            double hoursScore=0; if(volunteerHours>=200){ hoursScore = Math.min(1, ((volunteerHours-200)/2.0)*0.05); } // 满 1 分上限
-            double awardScore=0; for(JsonNode aw: comp.path("volunteerService").path("awards")){ String lvl=aw.path("level").asText(""); String role=aw.path("role").asText("PERSONAL"); double val=0; if("国家级".equals(lvl)) val=1; else if("省级".equals(lvl)) val=0.5; else if("校级".equals(lvl)) val=0.25; if("TEAM_MEMBER".equals(role)) val = val/2; awardScore = Math.max(awardScore, val); } if(awardScore>1) awardScore=1; double volunteerScore = Math.min(2, hoursScore+awardScore); // 志愿服务最高 2 分
-            HashMap<Integer, Double> honorYear = new HashMap<>(); for(JsonNode h: comp.path("honors")){ String lvl=h.path("level").asText(""); int y=h.path("year").asInt(0); double v=0; if("国家级".equals(lvl)) v=2; else if("省级".equals(lvl)) v=1; else if("校级".equals(lvl)) v=0.2; if(h.path("isCollective").asBoolean(false)) v/=2; honorYear.merge(y, v, Math::max); } double honorScore = honorYear.values().stream().mapToDouble(Double::doubleValue).sum(); if(honorScore>2) honorScore=2; // 荣誉称号最高 2
-            HashMap<Integer, Double> swYear = new HashMap<>(); for(JsonNode sw: comp.path("socialWork")){ String lvl= sw.path("level").asText("MEMBER"); double coef= switch(lvl){ case "EXEC"->2; case "PRESIDIUM"->1.5; case "HEAD"->1; case "DEPUTY"->0.75; default->0.5; }; double rating= sw.path("rating").asDouble(0); double val = coef * (rating/100.0); int y= sw.path("year").asInt(0); swYear.merge(y, val, Math::max); } double socialScore = swYear.values().stream().mapToDouble(Double::doubleValue).sum(); if(socialScore>2) socialScore=2; // 社会工作最高 2
-            // 体育比赛计分（之前遗漏导致 sportsScore 未定义）
-            double sportsScore = 0; for(JsonNode sp: comp.path("sports")){ String scope=sp.path("scope").asText(""); String result=sp.path("result").asText(""); double base=0; if("国际级".equals(scope)){ base = switch(result){ case "冠军"->8; case "亚军"->6.5; case "季军"->5; case "四至八名"->3.5; default->0; }; } else if("国家级".equals(scope)){ base = switch(result){ case "冠军"->5; case "亚军"->3.5; case "季军"->2; case "四至八名"->1; default->0; }; } boolean team= sp.path("isTeam").asBoolean(false); if(team){ int size= sp.path("teamSize").asInt(0); if(size>0) base/=size; } else base/=3.0; sportsScore += base; }
-            double perfTotal = volunteerScore + honorScore + socialScore + sportsScore; // base before internship/military
-            // === 国际组织实习 === (满 1 分) ===
-            double internshipScore = 0;
-            JsonNode compPerf = comp; // alias
-            if(compPerf.has("internshipMonths")){
-                double m = compPerf.path("internshipMonths").asDouble(0);
-                if(m >= 12) internshipScore = 1; else if(m > 6) internshipScore = 0.5; else internshipScore = 0;
-            } else {
-                String internshipFlag = compPerf.path("military").asText("").toUpperCase(Locale.ROOT);
-                if(internshipFlag.contains("FULL" ) || internshipFlag.contains("YEAR")) internshipScore = 1; else if(internshipFlag.contains("HALF") || internshipFlag.contains("SEMESTER")) internshipScore = 0.5; // else 0
+
+            // 4. 创新创业训练 (最多2分)
+            double innovationScore=0.0;
+            for(JsonNode ip: acad.path("innovationProjects")){
+                if(!"已结项".equals(ip.path("status").asText())) continue; // 必须结项
+                String level=ip.path("level").asText("");
+                String role=ip.path("role").asText("");
+                double add=0;
+                switch(level){
+                    case "国家级": add="组长".equals(role)?1:0.3; break;
+                    case "省级": add="组长".equals(role)?0.5:0.2; break;
+                    case "校级": add="组长".equals(role)?0.1:0.05; break;
+                    default: add=0;
+                }
+                innovationScore+=add;
             }
-            // === 参军入伍服兵役 === (满 2 分) ===
-            double militaryScore = 0; int ms = compPerf.path("militaryYears").asInt(0); if(ms >= 2) militaryScore = 2; else if(ms >=1) militaryScore = 1;
+            if(innovationScore>2) innovationScore=2; // 创新创业最多2分
+
+            // 学术专长总分：特殊学术专长答辩通过给满分15分，否则累加各项(上限15分)
+            specRaw = defensePassed? 15 : Math.min(15, publicationScore + patentScore + competitionScore + innovationScore);
+
+            // ========== 综合表现成绩计算 (满分5分) ==========
+            JsonNode comp = root.path("comprehensivePerformance");
+
+            // 1. 志愿服务 (最多1分，包含工时和表彰)
+            double volunteerHours = comp.path("volunteerService").path("hours").asDouble(0);
+
+            // 处理志愿服务时长分段(大型赛会和支教工时减半)
+            JsonNode segments = comp.path("volunteerService").path("segments");
+            if(segments.isArray() && segments.size()>0){
+                double effective=0;
+                for(JsonNode seg: segments){
+                    double h= seg.path("hours").asDouble(0);
+                    String t= seg.path("type").asText("normal");
+                    effective += ("normal".equals(t)? h: h/2.0); // 大型赛会/支教减半
+                }
+                volunteerHours = effective;
+            }
+
+            // 工时积分：≥200小时后，每2小时0.05分
+            double hoursScore=0;
+            if(volunteerHours>=200){
+                hoursScore = Math.min(1, ((volunteerHours-200)/2.0)*0.05);
+            }
+
+            // 志愿服务表彰
+            double awardScore=0;
+            for(JsonNode aw: comp.path("volunteerService").path("awards")){
+                String lvl=aw.path("level").asText("");
+                String role=aw.path("role").asText("PERSONAL");
+                double val=0;
+                if("国家级".equals(lvl)) val=1;
+                else if("省级".equals(lvl)) val=0.5;
+                else if("校级".equals(lvl)) val=0.25;
+                if("TEAM_MEMBER".equals(role)) val = val/2; // 队员减半
+                awardScore = Math.max(awardScore, val); // 多个表彰取最高
+            }
+            if(awardScore>1) awardScore=1;
+
+            double volunteerScore = Math.min(1, hoursScore+awardScore); // 志愿服务总分上限1分
+
+            // 2. 荣誉称号 (最多2分，同一学年取最高，不同学年累加)
+            HashMap<Integer, Double> honorYear = new HashMap<>();
+            for(JsonNode h: comp.path("honors")){
+                String lvl=h.path("level").asText("");
+                int y=h.path("year").asInt(0);
+                double v=0;
+                if("国家级".equals(lvl)) v=2;
+                else if("省级".equals(lvl)) v=1;
+                else if("校级".equals(lvl)) v=0.2;
+                if(h.path("isCollective").asBoolean(false)) v/=2; // 集体荣誉减半
+                honorYear.merge(y, v, Math::max); // 同一年取最高
+            }
+            double honorScore = honorYear.values().stream().mapToDouble(Double::doubleValue).sum();
+            if(honorScore>2) honorScore=2; // 荣誉称号上限2分
+
+            // 3. 社会工作 (最多2分，同一学年取最高，不同学年累加)
+            HashMap<Integer, Double> swYear = new HashMap<>();
+            for(JsonNode sw: comp.path("socialWork")){
+                String lvl= sw.path("level").asText("MEMBER");
+                double coef= switch(lvl){
+                    case "EXEC"->2;        // 执行主席、团总支书记
+                    case "PRESIDIUM"->1.5; // 主席团、副书记
+                    case "HEAD"->1;        // 部长、党支部书记、班长、团支书
+                    case "DEPUTY"->0.75;   // 副部长、系团总支书记、社团社长
+                    default->0.5;          // 委员、班委等
+                };
+                double rating= sw.path("rating").asDouble(0); // 评分0-100
+                double val = coef * (rating/100.0);
+                int y= sw.path("year").asInt(0);
+                swYear.merge(y, val, Math::max); // 同一年取最高
+            }
+            double socialScore = swYear.values().stream().mapToDouble(Double::doubleValue).sum();
+            if(socialScore>2) socialScore=2; // 社会工作上限2分
+
+            // 4. 体育比赛
+            double sportsScore = 0;
+            for(JsonNode sp: comp.path("sports")){
+                String scope=sp.path("scope").asText("");
+                String result=sp.path("result").asText("");
+                double base=0;
+
+                if("国际级".equals(scope)){
+                    base = switch(result){
+                        case "冠军"->8;
+                        case "亚军"->6.5;
+                        case "季军"->5;
+                        case "四至八名"->3.5;
+                        default->0;
+                    };
+                } else if("国家级".equals(scope)){
+                    base = switch(result){
+                        case "冠军"->5;
+                        case "亚军"->3.5;
+                        case "季军"->2;
+                        case "四至八名"->1;
+                        default->0;
+                    };
+                }
+
+                boolean team= sp.path("isTeam").asBoolean(false);
+                if(team){
+                    int size= sp.path("teamSize").asInt(0);
+                    if(size>0) base/=size; // 团队项目按人数平均
+                } else {
+                    base/=3.0; // 个人或二人项目 ÷ 3
+                }
+                sportsScore += base;
+            }
+
+            double perfTotal = volunteerScore + honorScore + socialScore + sportsScore;
+
+            // 5. 国际组织实习 (最多1分)
+            double internshipScore = 0;
+            if(comp.has("internshipMonths")){
+                double m = comp.path("internshipMonths").asDouble(0);
+                if(m >= 12) internshipScore = 1;
+                else if(m > 6) internshipScore = 0.5;
+                else internshipScore = 0;
+            } else {
+                String internshipFlag = comp.path("military").asText("").toUpperCase(Locale.ROOT);
+                if(internshipFlag.contains("FULL") || internshipFlag.contains("YEAR")) internshipScore = 1;
+                else if(internshipFlag.contains("HALF") || internshipFlag.contains("SEMESTER")) internshipScore = 0.5;
+            }
+
+            // 6. 参军入伍服兵役 (最多2分)
+            double militaryScore = 0;
+            int ms = comp.path("militaryYears").asInt(0);
+            if(ms >= 2) militaryScore = 2;
+            else if(ms >=1) militaryScore = 1;
+
             perfTotal += internshipScore + militaryScore;
-            if(perfTotal>5) perfTotal=5; perfRaw = perfTotal; // 直接 0-5
+            if(perfTotal>5) perfTotal=5; // 综合表现上限5分
+
+            perfRaw = perfTotal;
+
+            // 保存计算详情到content中
             try {
-                com.fasterxml.jackson.databind.node.ObjectNode obj = root.isObject()? (com.fasterxml.jackson.databind.node.ObjectNode)root : MAPPER.createObjectNode();
-                com.fasterxml.jackson.databind.node.ObjectNode raw = obj.with("calculatedRaw"); raw.put("specRaw", specRaw); raw.put("perfRaw", perfRaw); raw.put("internshipScore", internshipScore); raw.put("militaryScore", militaryScore); if(rankScoreDetail!=null) raw.put("academicRankScore", rankScoreDetail); if(gpaScoreDetail!=null) raw.put("academicGpaScore", gpaScoreDetail); if(convertedDetail!=null) raw.put("academicConvertedScore", convertedDetail); raw.put("academicBaseUsed", academicBase);
-                if(!raw.has("academicConvertedScore")) { double est = academicBase/0.8; if(est<0) est=0; if(est>100) est=100; raw.put("academicConvertedScore", est); }
+                com.fasterxml.jackson.databind.node.ObjectNode obj = root.isObject()?
+                    (com.fasterxml.jackson.databind.node.ObjectNode)root : MAPPER.createObjectNode();
+
+                // 原始分数详情
+                com.fasterxml.jackson.databind.node.ObjectNode raw = obj.with("calculatedRaw");
+                raw.put("publicationScore", publicationScore);
+                raw.put("patentScore", patentScore);
+                raw.put("competitionScore", competitionScore);
+                raw.put("innovationScore", innovationScore);
+                raw.put("specRaw", specRaw);
+                raw.put("volunteerHoursScore", hoursScore);
+                raw.put("volunteerAwardScore", awardScore);
+                raw.put("volunteerScore", volunteerScore);
+                raw.put("honorScore", honorScore);
+                raw.put("socialScore", socialScore);
+                raw.put("sportsScore", sportsScore);
+                raw.put("perfRaw", perfRaw);
+                raw.put("internshipScore", internshipScore);
+                raw.put("militaryScore", militaryScore);
+
+                if(rankScoreDetail!=null) raw.put("academicRankScore", rankScoreDetail);
+                if(gpaScoreDetail!=null) raw.put("academicGpaScore", gpaScoreDetail);
+                if(convertedDetail!=null) raw.put("academicConvertedScore", convertedDetail);
+                raw.put("academicBaseUsed", academicBase);
+
+                if(!raw.has("academicConvertedScore")) {
+                    double est = academicBase/0.8;
+                    if(est<0) est=0;
+                    if(est>100) est=100;
+                    raw.put("academicConvertedScore", est);
+                }
+
+                // 最终成绩
                 com.fasterxml.jackson.databind.node.ObjectNode scores = obj.with("calculatedScores");
-                scores.put("academicScore", academicBase);
-                scores.put("academicAchievementScore", specRaw);
-                scores.put("performanceScore", perfRaw);
-                scores.put("totalScore", academicBase + specRaw + perfRaw);
+                scores.put("academicScore", academicBase); // 学业综合成绩×80%
+                scores.put("academicAchievementScore", specRaw); // 学术专长0-15分
+                scores.put("performanceScore", perfRaw); // 综合表现0-5分
+                scores.put("totalScore", academicBase + specRaw + perfRaw); // 推免综合成绩(满分100)
+
                 app.setContent(MAPPER.writeValueAsString(obj));
             } catch (Exception ignoreInner) {}
+
         } catch (Exception ignored){ }
-        // 不再缩放，直接赋值
-        app.setAcademicScore(academicBase);
+
+        // 设置Application实体的分数字段
+        app.setAcademicScore(academicBase); // 0-80
         app.setAchievementScore(specRaw); // 0-15
         app.setPerformanceScore(perfRaw); // 0-5
-        app.setTotalScore(academicBase + specRaw + perfRaw); // 满分 100
+        app.setTotalScore(academicBase + specRaw + perfRaw); // 满分100
     }
 
     private double computeAcademicBaseFromApp(Application app){
-        // Prefer: explicit converted percentage (0-100) if present in content.basicInfo.
+        // 优先使用用户表中的换算后成绩（convertedScore）
+        User u = app.getUser();
+        if(u != null && u.getConvertedScore() != null) {
+            // 换算后的成绩是百分制（0-100），需要转换为 0-80 分制
+            double baseFromConverted = u.getConvertedScore() * 0.8;
+            return Math.min(80, Math.max(0, baseFromConverted));
+        }
+
+        // 其次，尝试从申请内容中获取 converted score
         JsonNode rootNode = parseContent(app.getContent());
         JsonNode bNode = rootNode.path("basicInfo");
         Double converted = null;
@@ -814,8 +1046,8 @@ public class ApplicationService {
         else if(bNode.hasNonNull("percentageScore")) converted = bNode.path("percentageScore").asDouble();
         else if(bNode.hasNonNull("averageScore100")) converted = bNode.path("averageScore100").asDouble();
         if(converted!=null){ double baseFromPct = Math.max(0, Math.min(100, converted)) * 0.8; return Math.min(80, baseFromPct); }
-        // Fallback to GPA & rank blending heuristic
-        User u = app.getUser();
+
+        // 最后，使用 GPA & rank 的计算方式作为兜底
         Double gpa = u.getGpa(); Integer rank = u.getAcademicRank(); Integer total = u.getMajorTotal();
         if(gpa==null || rank==null || total==null){
             try { JsonNode b = bNode; if(gpa==null && b.hasNonNull("gpa")) gpa = b.path("gpa").asDouble(); if(rank==null && b.hasNonNull("academicRanking")) rank = b.path("academicRanking").asInt(); if(total==null && b.hasNonNull("totalStudents")) total = b.path("totalStudents").asInt(); } catch(Exception ignored){}

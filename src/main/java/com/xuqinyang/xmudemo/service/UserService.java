@@ -130,6 +130,7 @@ public class UserService {
             existingUser.setGpa(user.getGpa());
             existingUser.setAcademicRank(user.getAcademicRank());
             existingUser.setMajorTotal(user.getMajorTotal());
+            existingUser.setConvertedScore(user.getConvertedScore());
             existingUser.setRole(user.getRole());
 
             return userRepository.save(existingUser);
@@ -269,7 +270,8 @@ public class UserService {
                     String gpaStr = getCell(formatter, currentRow, headerIndex, List.of("GPA","绩点"));
                     String rankStr = getCell(formatter, currentRow, headerIndex, List.of("学业排名","排名","rank"));
                     String totalStr = getCell(formatter, currentRow, headerIndex, List.of("专业总人数","总人数","total"));
-                    upsertUser(records, rowNumber, studentId, name, department, major, roleStr, gpaStr, rankStr, totalStr);
+                    String convertedScoreStr = getCell(formatter, currentRow, headerIndex, List.of("换算后的成绩","学业综合成绩","convertedScore","百分制成绩"));
+                    upsertUser(records, rowNumber, studentId, name, department, major, roleStr, gpaStr, rankStr, totalStr, convertedScoreStr);
                 } catch (Exception e) {
                     ImportRecord rec = new ImportRecord(rowNumber, studentId, "failed", "处理失败: "+e.getMessage());
                     rec.setName(name); records.add(rec);
@@ -335,8 +337,9 @@ public class UserService {
                 String gpaStr = getCSVCellImproved(cols, headerIndex, List.of("GPA", "绩点", "gpa"));
                 String rankStr = getCSVCellImproved(cols, headerIndex, List.of("学业排名", "排名", "rank", "Rank", "RANK"));
                 String totalStr = getCSVCellImproved(cols, headerIndex, List.of("专业总人数", "总人数", "total", "Total", "TOTAL"));
+                String convertedScoreStr = getCSVCellImproved(cols, headerIndex, List.of("换算后的成绩", "学业综合成绩", "convertedScore", "百分制成绩"));
 
-                upsertUser(records, rowNumber, studentId, name, department, major, roleStr, gpaStr, rankStr, totalStr);
+                upsertUser(records, rowNumber, studentId, name, department, major, roleStr, gpaStr, rankStr, totalStr, convertedScoreStr);
 
             } catch (Exception e) {
                 ImportRecord rec = new ImportRecord(rowNumber, studentId, "failed", "处理失败: " + e.getMessage());
@@ -469,7 +472,7 @@ public class UserService {
     }
 
     private void upsertUser(List<ImportRecord> records, int rowNumber, String studentId, String name,
-                           String department, String major, String roleStr, String gpaStr, String rankStr, String totalStr) {
+                           String department, String major, String roleStr, String gpaStr, String rankStr, String totalStr, String convertedScoreStr) {
         // 为每个用户的创建/更新添加锁保护
         distributedLockService.executeWithLockAndRetry("user:upsert:" + studentId, () -> {
             try {
@@ -479,7 +482,7 @@ public class UserService {
                 if (!isBlank(roleStr)) {
                     try { role = Role.valueOf(roleStr.toUpperCase()); } catch (Exception ignored) {}
                 }
-                Double gpa = null; Integer rank = null, total = null;
+                Double gpa = null; Integer rank = null, total = null; Double convertedScore = null;
                 if (!isBlank(gpaStr)) {
                     try { gpa = Double.parseDouble(gpaStr); } catch (Exception ignored) {}
                 }
@@ -488,6 +491,9 @@ public class UserService {
                 }
                 if (!isBlank(totalStr)) {
                     try { total = Integer.parseInt(totalStr); } catch (Exception ignored) {}
+                }
+                if (!isBlank(convertedScoreStr)) {
+                    try { convertedScore = Double.parseDouble(convertedScoreStr); } catch (Exception ignored) {}
                 }
 
                 User user;
@@ -501,6 +507,7 @@ public class UserService {
                     if (gpa != null) user.setGpa(gpa);
                     if (rank != null) user.setAcademicRank(rank);
                     if (total != null) user.setMajorTotal(total);
+                    if (convertedScore != null) user.setConvertedScore(convertedScore);
                     status = "updated";
                 } else {
                     user = new User();
@@ -513,6 +520,7 @@ public class UserService {
                     if (gpa != null) user.setGpa(gpa);
                     if (rank != null) user.setAcademicRank(rank);
                     if (total != null) user.setMajorTotal(total);
+                    if (convertedScore != null) user.setConvertedScore(convertedScore);
                     status = "created";
                 }
 

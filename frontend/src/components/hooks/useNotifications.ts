@@ -46,6 +46,7 @@ const mergeNotifications = (notifications: Notification[]): Notification[] => {
 
 interface UseNotificationsProps {
   userRole?: string; // 传入用户角色
+  userId?: string; // 传入用户ID（学号）
 }
 
 export const useNotifications = (props?: UseNotificationsProps) => {
@@ -57,6 +58,7 @@ export const useNotifications = (props?: UseNotificationsProps) => {
   const isFetchingCountRef = useRef(false); // 新增：防止重复fetch count的锁
 
   const isReviewer = props?.userRole === 'REVIEWER' || props?.userRole === 'ADMIN';
+  const userId = props?.userId; // 获取用户ID
 
   // 获取未读消息数量（带锁）
   const fetchUnreadCount = useCallback(async () => {
@@ -131,8 +133,8 @@ export const useNotifications = (props?: UseNotificationsProps) => {
         const data: NotificationResponse = await res.json();
 
         if (data.notifications && data.notifications.length > 0) {
-          // 保存到 localStorage
-          saveNotifications(data.notifications);
+          // 保存到 localStorage（传入用户ID）
+          saveNotifications(data.notifications, userId);
 
           // 合并重复消息
           const mergedNotifications = mergeNotifications(data.notifications);
@@ -157,7 +159,7 @@ export const useNotifications = (props?: UseNotificationsProps) => {
       }, 500);
     }
     return null;
-  }, []);
+  }, [userId]);
 
   // 显示通知（使用 Element Plus Notification）
   const showNotification = useCallback((notification: Notification) => {

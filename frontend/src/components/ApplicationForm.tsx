@@ -16,6 +16,9 @@ import { Badge } from './ui/badge';
 import { useLocalTempFile } from './hooks/useLocalTempFile';
 import { ProofFileUploader } from './ProofFileUploader';
 import { ConfirmDialog } from './ui/confirm-dialog';
+import { CompetitionPicker } from './ui/competition-picker';
+import { CompetitionSelect } from './ui/CompetitionSelect';
+import { CompetitionItem } from '../config/competitionDatabase';
 
 interface ApplicationFormProps {
   activity: Activity;
@@ -34,10 +37,11 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
     studentId: user.studentId || '-',
     gender: '男' as '男' | '女',
     department: user.department || '',
-    major: '',
-    gpa: '',
-    academicRanking: '',
-    totalStudents: ''
+    major: user.major || '',
+    gpa: user.gpa?.toString() || '',
+    academicRanking: user.academicRank?.toString() || '',
+    totalStudents: user.majorTotal?.toString() || '',
+    convertedScore: user.convertedScore?.toString() || ''
   }));
   const [languageScores, setLanguageScores] = useState({ cet4Score:'', cet6Score:'', toeflScore:'', ieltsScore:'', greScore:'', otherLanguage:'', otherScore:'' });
   // 学术相关初始为空，用户自行添加；空则不参与校验
@@ -47,7 +51,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
   const [innovationProjects, setInnovationProjects] = useState<any[]>([]);
   const [volunteerHours, setVolunteerHours] = useState('');
   const [volunteerSegments, setVolunteerSegments] = useState<{id:number; hours:string; type:'normal'|'large_event'|'support'}[]>([]);
-  const [socialWork, setSocialWork] = useState([{ position:'', duration:'', year:2024, level:'MEMBER' as 'EXEC'|'PRESIDIUM'|'HEAD'|'DEPUTY'|'MEMBER', rating:80 }]);
+  const [socialWork, setSocialWork] = useState<any[]>([]); // 改为空数组
   const [honors, setHonors] = useState<any[]>([]);
   // 新增状态变量
   const [volunteerAwards, setVolunteerAwards] = useState<{ level:'国家级'|'省级'|'校级'; role:'TEAM_LEADER'|'TEAM_MEMBER'|'PERSONAL'; id:number }[]>([]);
@@ -462,9 +466,9 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
       basicInfo,
       languageScores,
       academicAchievements: { publications: mapWithProof(publications), patents: mapWithProof(patents), competitions: mapWithProof(competitions), innovationProjects: mapWithProof(innovationProjects) },
-      comprehensivePerformance: { volunteerService:{ hours: volunteerHours, segments: volunteerSegments.map(s=>({hours:+s.hours||0,type:s.type})), awards: volunteerAwards }, socialWork, honors: mapWithProof(honors), sports, internship: internshipDuration, militaryYears },
+      comprehensivePerformance: { volunteerService: { hours: volunteerHours, segments: volunteerSegments.map(s => ({ hours: +s.hours || 0, type: s.type })), awards: volunteerAwards }, socialWork, honors: mapWithProof(honors), sports, internship: internshipDuration, militaryYears },
       personalStatement,
-      specialAcademicTalent: specialTalentApplying? { isApplying:true, description:specialTalentDesc, achievements:specialTalentAchievements, professors: specialTalentProfessors }: undefined,
+      specialAcademicTalent: specialTalentApplying ? { isApplying: true, description: specialTalentDesc, achievements: specialTalentAchievements, professors: specialTalentProfessors } : undefined,
       uploadedFiles
     };
   };
@@ -552,10 +556,35 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
               <div><Label>系别</Label><Input value={basicInfo.department} onChange={e=>handleBasicChange('department', e.target.value)} /></div>
               <div><Label>专业</Label><Input value={basicInfo.major} onChange={e=>handleBasicChange('major', e.target.value)} /></div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <div><Label className="text-xs sm:text-sm">GPA</Label><Input value={basicInfo.gpa} onChange={e=>handleBasicChange('gpa', e.target.value)} /></div>
               <div><Label className="text-xs sm:text-sm">学业排名</Label><Input value={basicInfo.academicRanking} onChange={e=>handleBasicChange('academicRanking', e.target.value)} /></div>
               <div><Label className="text-xs sm:text-sm">专业总人数</Label><Input value={basicInfo.totalStudents} onChange={e=>handleBasicChange('totalStudents', e.target.value)} /></div>
+              <div>
+                <Label className="text-xs sm:text-sm flex items-center gap-1">
+                  换算后的成绩
+                  {user.convertedScore != null && <span className="text-[10px] text-gray-500">(已导入)</span>}
+                </Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={basicInfo.convertedScore}
+                  onChange={e=>handleBasicChange('convertedScore', e.target.value)}
+                  disabled={user.convertedScore != null}
+                  placeholder="0-100"
+                  className={user.convertedScore != null ? 'bg-gray-100' : ''}
+                />
+              </div>
+            </div>
+            <div className="p-2 sm:p-3 bg-blue-50 border border-blue-200 rounded text-[10px] sm:text-xs">
+              <p className="font-medium mb-1">学业成绩说明：</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li>如果用户数据中已有"换算后的成绩"，将优先使用该成绩（只读）</li>
+                <li>否则可以手动填写百分制成绩（0-100分）</li>
+                <li>如果都没有，系统将根据GPA和排名自动计算</li>
+              </ul>
             </div>
             <div>
               <Label>成绩单 *</Label>
@@ -583,28 +612,23 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
                 <Select value={pub.type} onValueChange={v=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,type:v as any}:x)); markDirty();}}>
                   <SelectTrigger><SelectValue placeholder="选择类别" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="A类">A类</SelectItem>
-                    <SelectItem value="B类">B类</SelectItem>
-                    <SelectItem value="C类">C类</SelectItem>
-                    <SelectItem value="高水平中文">高水平中文</SelectItem>
-                    <SelectItem value="信息通信工程">信息通信工程</SelectItem>
+                    <SelectItem value="Nature/Science/Cell">Nature/Science/Cell主刊及子刊(IF≥10)</SelectItem>
+                    <SelectItem value="A类">CCF-A类</SelectItem>
+                    <SelectItem value="B类">CCF-B类</SelectItem>
+                    <SelectItem value="C类">CCF-C类</SelectItem>
+                    <SelectItem value="高水平中文">高水平中文期刊</SelectItem>
+                    <SelectItem value="信息通信工程">信息通信工程期刊</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-xs">发表年份</Label>
+                <Label className="text-xs sm:text-sm">发表年份</Label>
                 <Input type="number" value={pub.publishYear} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,publishYear:+e.target.value}:x)); markDirty();}} />
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 md:gap-4 items-start">
-              <div>
-                <Label className="text-xs sm:text-sm">作者排名</Label>
-                <Input type="number" value={pub.authorRank} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,authorRank:+e.target.value}:x)); markDirty();}} />
-              </div>
-              <div>
-                <Label className="text-xs sm:text-sm">总作者数</Label>
-                <Input type="number" value={pub.totalAuthors} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,totalAuthors:+e.target.value}:x)); markDirty();}} />
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div><Label className="text-xs sm:text-sm">作者排名</Label><Input type="number" value={pub.authorRank} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,authorRank:+e.target.value}:x)); markDirty();}} /></div>
+              <div><Label className="text-xs sm:text-sm">总作者数</Label><Input type="number" value={pub.totalAuthors} onChange={e=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,totalAuthors:+e.target.value}:x)); markDirty();}} /></div>
               <div className="flex flex-col gap-1 text-[10px] sm:text-[11px] text-gray-500">
                 <div className="flex items-center gap-2">
                   <Checkbox checked={pub.isCoFirst} onCheckedChange={v=>{setPublications(p=>p.map((x,idx)=>idx===i?{...x,isCoFirst:!!v}:x)); markDirty();}} disabled={!(pub.authorRank===1||pub.authorRank===2)} />
@@ -621,7 +645,22 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
             <div className="flex justify-between"><h4 className="text-sm">竞赛 {i+1}</h4>{competitions.length>=1 && <Button type="button" size="sm" variant="destructive" onClick={()=>{setCompetitions(c=>c.filter((_,x)=>x!==i)); markDirty();}}><Trash2 className="w-3 h-3" />删除</Button>}</div>
             {/* Competition (学科竞赛) */}
             <Label className="text-xs">竞赛名称</Label>
-            <Input placeholder="示例: 蓝桥杯" value={comp.name} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,name:e.target.value}:x)); markDirty();}} />
+            <CompetitionSelect
+              value={comp.name}
+              onChange={(name, item) => {
+                setCompetitions(c => c.map((x, idx) =>
+                  idx === i ? {
+                    ...x,
+                    name,
+                    // 如果从竞赛库选择，自动填充级别
+                    ...(item ? { level: item.level } : {})
+                  } : x
+                ));
+                markDirty();
+              }}
+              disabled={!isEditable}
+              placeholder="选择或搜索竞赛..."
+            />
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label className="text-xs">级别</Label>
@@ -686,8 +725,315 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
             <div><Label>证明</Label><ProofFileUploader meta={p.proofFile as any} applicationId={applicationId} disabled={!isEditable} onChange={(m)=>{ setInnovationProjects(list=> list.map((x,idx)=> idx===i? { ...x, proofFile: m as any }: x)); markDirty(); }} /></div>
           </Card>)}</CardContent></Card>
 
+          {/* 志愿服务 (可选) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Award className="w-5 h-5" />
+                <span>志愿服务 (可选)</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded text-xs">
+                <p className="font-medium mb-1">志愿服务计分规则：</p>
+                <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                  <li>工时积分：≥200小时后，每2小时加0.05分，上限1分</li>
+                  <li>大型赛会、支教活动工时减半计算</li>
+                  <li>表彰加分：国家级1分、省级0.5分、校级0.25分（取最高）</li>
+                  <li>志愿服务总分上限：1分</li>
+                </ul>
+              </div>
+
+              {/* 志愿服务总时长 */}
+              <div>
+                <Label className="text-sm">志愿服务总时长（小时）</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={volunteerHours}
+                  onChange={e=>{setVolunteerHours(e.target.value); markDirty();}}
+                  placeholder="如: 250"
+                />
+              </div>
+
+              {/* 志愿服务分段记录 */}
+              <div>
+                <Label className="text-sm flex items-center justify-between">
+                  <span>志愿服务时长分段（可选，用于区分类型）</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={()=>{
+                      setVolunteerSegments(s=>[...s, {id:Date.now(), hours:'', type:'normal'}]);
+                      markDirty();
+                    }}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />添加分段
+                  </Button>
+                </Label>
+                {volunteerSegments.length > 0 && (
+                  <div className="space-y-2 mt-2">
+                    {volunteerSegments.map((seg, i) => (
+                      <div key={seg.id} className="flex gap-2 items-end">
+                        <div className="flex-1">
+                          <Label className="text-xs">时长（小时）</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={seg.hours}
+                            onChange={e=>{
+                              setVolunteerSegments(list=>list.map((x,idx)=>idx===i?{...x,hours:e.target.value}:x));
+                              markDirty();
+                            }}
+                            placeholder="如: 100"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <Label className="text-xs">类型</Label>
+                          <Select
+                            value={seg.type}
+                            onValueChange={v=>{
+                              setVolunteerSegments(list=>list.map((x,idx)=>idx===i?{...x,type:v as any}:x));
+                              markDirty();
+                            }}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="normal">普通志愿服务</SelectItem>
+                              <SelectItem value="large_event">大型赛会（折半）</SelectItem>
+                              <SelectItem value="support">支教活动（折半）</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={()=>{
+                            setVolunteerSegments(list=>list.filter((_,idx)=>idx!==i));
+                            markDirty();
+                          }}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[10px] text-gray-500 mt-1">注：大型赛会和支教活动工时按50%计算</p>
+              </div>
+
+              {/* 志愿服务表彰 */}
+              <div>
+                <Label className="text-sm flex items-center justify-between">
+                  <span>志愿服务表彰（可选）</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={()=>{
+                      setVolunteerAwards(a=>[...a, {id:Date.now(), level:'校级', role:'PERSONAL'}]);
+                      markDirty();
+                    }}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />添加表彰
+                  </Button>
+                </Label>
+                {volunteerAwards.length > 0 && (
+                  <div className="space-y-2 mt-2">
+                    {volunteerAwards.map((award, i) => (
+                      <div key={award.id} className="flex gap-2 items-end">
+                        <div className="flex-1">
+                          <Label className="text-xs">级别</Label>
+                          <Select
+                            value={award.level}
+                            onValueChange={v=>{
+                              setVolunteerAwards(list=>list.map((x,idx)=>idx===i?{...x,level:v as any}:x));
+                              markDirty();
+                            }}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="国家级">国家级（1分）</SelectItem>
+                              <SelectItem value="省级">省级（0.5分）</SelectItem>
+                              <SelectItem value="校级">校级（0.25分）</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex-1">
+                          <Label className="text-xs">角色</Label>
+                          <Select
+                            value={award.role}
+                            onValueChange={v=>{
+                              setVolunteerAwards(list=>list.map((x,idx)=>idx===i?{...x,role:v as any}:x));
+                              markDirty();
+                            }}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="PERSONAL">个人</SelectItem>
+                              <SelectItem value="TEAM_LEADER">队长</SelectItem>
+                              <SelectItem value="TEAM_MEMBER">队员（减半）</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={()=>{
+                            setVolunteerAwards(list=>list.filter((_,idx)=>idx!==i));
+                            markDirty();
+                          }}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 社会工作 (可选) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center space-x-2">
+                  <Award className="w-5 h-5" />
+                  <span>社会工作 (可选)</span>
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={()=>{
+                    setSocialWork(s=>[...s, {position:'', duration:'', year:new Date().getFullYear(), level:'MEMBER', rating:80}]);
+                    markDirty();
+                  }}
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded text-xs">
+                <p className="font-medium mb-1">社会工作计分规则：</p>
+                <ul className="list-disc list-inside space-y-0.5 text-[10px]">
+                  <li>得分 = 职务系数 × (评分/100)</li>
+                  <li>执行主席/团总支书记：系数2.0</li>
+                  <li>主席团/副书记：系数1.5</li>
+                  <li>部长/书记/班长/团支书：系数1.0</li>
+                  <li>副部长/系团总支书记/社团社长：系数0.75</li>
+                  <li>委员/班委/社团副社长等：系数0.5</li>
+                  <li>同一学年多个职务只取最高分，不同学年可累加，上限2分</li>
+                </ul>
+              </div>
+
+              {socialWork.length === 0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}
+
+              {socialWork.map((sw, i) => (
+                <Card key={i} className="p-4 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-sm font-medium">社会工作 {i+1}</h4>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={()=>{
+                        setSocialWork(list=>list.filter((_,idx)=>idx!==i));
+                        markDirty();
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" />删除
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">职务名称</Label>
+                      <Input
+                        value={sw.position}
+                        onChange={e=>{
+                          setSocialWork(list=>list.map((x,idx)=>idx===i?{...x,position:e.target.value}:x));
+                          markDirty();
+                        }}
+                        placeholder="如: 学生会部长"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">职务级别</Label>
+                      <Select
+                        value={sw.level}
+                        onValueChange={v=>{
+                          setSocialWork(list=>list.map((x,idx)=>idx===i?{...x,level:v as any}:x));
+                          markDirty();
+                        }}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="EXEC">执行主席/团总支书记（系数2.0）</SelectItem>
+                          <SelectItem value="PRESIDIUM">主席团/副书记（系数1.5）</SelectItem>
+                          <SelectItem value="HEAD">部长/书记/班长/团支书（系数1.0）</SelectItem>
+                          <SelectItem value="DEPUTY">副部长/系团总支书记/社团社长（系数0.75）</SelectItem>
+                          <SelectItem value="MEMBER">委员/班委/社团副社长（系数0.5）</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <Label className="text-xs">任职年份</Label>
+                      <Input
+                        type="number"
+                        value={sw.year}
+                        onChange={e=>{
+                          setSocialWork(list=>list.map((x,idx)=>idx===i?{...x,year:+e.target.value}:x));
+                          markDirty();
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">任期时长</Label>
+                      <Input
+                        value={sw.duration}
+                        onChange={e=>{
+                          setSocialWork(list=>list.map((x,idx)=>idx===i?{...x,duration:e.target.value}:x));
+                          markDirty();
+                        }}
+                        placeholder="如: 一学年"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">评分（0-100）</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={sw.rating}
+                        onChange={e=>{
+                          setSocialWork(list=>list.map((x,idx)=>idx===i?{...x,rating:+e.target.value}:x));
+                          markDirty();
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-gray-500">
+                    预估得分：{((sw.level === 'EXEC' ? 2 : sw.level === 'PRESIDIUM' ? 1.5 : sw.level === 'HEAD' ? 1 : sw.level === 'DEPUTY' ? 0.75 : 0.5) * (sw.rating / 100)).toFixed(2)}分
+                  </p>
+                </Card>
+              ))}
+            </CardContent>
+          </Card>
+
           {/* 荣誉称号 */}
-          <Card><CardHeader><CardTitle className="flex items-center justify-between"><span className="flex items-center space-x-2"><Award className="w-5 h-5" /><span>荣誉称号 (可选)</span></span><Button type="button" size="sm" onClick={()=>{setHonors(h=>[...h,{ title:'', level:'国家级', year:new Date().getFullYear(), isCollective:false, proofFile:null }]); markDirty();}}><Plus className="w-4 h-4" /></Button></CardTitle></CardHeader><CardContent className="space-y-3">{honors.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}{honors.map((h,i)=> <div key={i} className="p-3 border rounded space-y-3">
+          <Card><CardHeader><CardTitle className="flex items-center justify-between"><span className="flex items-center space-x-2"><Award className="w-5 h-5" /><span>荣誉称号 (可选)</span></span><Button type="button" size="sm" onClick={()=>{setHonors(h=>[...h,{ title:'', level:'国家级', year:new Date().getFullYear(), isCollective:false, proofFile:null }]); markDirty();}}><Plus className="w-4 h-4" /></Button></CardTitle></CardHeader>
+          <CardContent className="space-y-3">{honors.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}{honors.map((h,i)=> <div key={i} className="p-3 border rounded space-y-3">
   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
     <div><Label className="text-xs">荣誉名称</Label><Input value={h.title} onChange={e=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,title:e.target.value}:x)); markDirty();}} placeholder="如: 三好学生" /></div>
     <div><Label className="text-xs">等级</Label><Select value={h.level} onValueChange={v=>{setHonors(s=>s.map((x,idx)=>idx===i?{...x,level:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="国家级">国家级</SelectItem><SelectItem value="省级">省级</SelectItem><SelectItem value="校级">校级</SelectItem></SelectContent></Select></div>
@@ -703,21 +1049,135 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
 </div>)}</CardContent></Card>
 
           {/* 体育比赛 */}
-          <Card><CardHeader><CardTitle className="flex items-center space-x-2"><Trophy className="w-5 h-5" /><span>体育比赛 (可选)</span></CardTitle></CardHeader><CardContent className="space-y-3">{sports.length===0 && <div className="text-xs text-gray-500">暂无记录，点击下方添加</div>}{sports.map((sp,i)=> <Card key={sp.id} className="p-4 space-y-3">
-            <div className="flex justify-between items-center"><h4 className="text-sm">赛事 {i+1}</h4><Button type="button" size="sm" variant="destructive" onClick={()=>{setSports(list=>list.filter(x=>x.id!==sp.id)); markDirty();}}>删</Button></div>
-            <Label className="text-xs">赛事名称</Label>
-            <Input placeholder="示例: 全国大学生田径锦标赛" value={sp.name} onChange={e=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,name:e.target.value}:x)); markDirty();}} />
-            <div className="grid md:grid-cols-5 grid-cols-2 gap-3 items-end text-xs">
-              <div><Label>级别</Label><Select value={sp.scope} onValueChange={v=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,scope:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="国际级">国际级</SelectItem><SelectItem value="国家级">国家级</SelectItem></SelectContent></Select></div>
-              <div><Label>成绩</Label><Select value={sp.result} onValueChange={v=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,result:v as any}:x)); markDirty();}}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="冠军">冠军</SelectItem><SelectItem value="亚军">亚军</SelectItem><SelectItem value="季军">季军</SelectItem><SelectItem value="四至八名">四至八名</SelectItem></SelectContent></Select></div>
-              <div className="flex items-center gap-2 mt-5"><Checkbox checked={sp.isTeam} onCheckedChange={v=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,isTeam:!!v}:x)); markDirty();}} />团队</div>
-              {sp.isTeam && <div><Label>团队人数</Label><Input type="number" min={1} value={sp.teamSize} onChange={e=>{setSports(list=>list.map(x=>x.id===sp.id?{...x,teamSize:+e.target.value}:x)); markDirty();}} /></div>}
-              {!sp.isTeam && <div className="text-gray-500">个人赛</div>}
-            </div>
-          </Card>)}
-          <Button type="button" size="sm" onClick={()=>{setSports(list=>[...list,{ id:Date.now(), name:'', scope:'国家级', result:'冠军', isTeam:false, teamSize:1 }]); markDirty();}}>+新增体育比赛</Button>
-          <p className="text-[10px] text-gray-500">国际/国家级计分按规则折算，计入综合表现上限。</p>
-          </CardContent></Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center space-x-2">
+                  <Trophy className="w-5 h-5" />
+                  <span>体育比赛 (可选)</span>
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={()=>{
+                    setSports(list=>[...list,{ id:Date.now(), name:'', scope:'国家级', result:'冠军', isTeam:false, teamSize:1, teamRank:1 }]);
+                    markDirty();
+                  }}
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {sports.length===0 && <div className="text-xs text-gray-500">暂无记录，点击 + 添加</div>}
+              {sports.map((sp,i)=> (
+                <Card key={sp.id} className="p-4 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-sm">赛事 {i+1}</h4>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={()=>{
+                        setSports(list=>list.filter(x=>x.id!==sp.id));
+                        markDirty();
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" />删除
+                    </Button>
+                  </div>
+                  <div>
+                    <Label className="text-xs">赛事名称</Label>
+                    <Input
+                      placeholder="示例: 全国大学生田径锦标赛"
+                      value={sp.name}
+                      onChange={e=>{
+                        setSports(list=>list.map(x=>x.id===sp.id?{...x,name:e.target.value}:x));
+                        markDirty();
+                      }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">级别</Label>
+                      <Select
+                        value={sp.scope}
+                        onValueChange={v=>{
+                          setSports(list=>list.map(x=>x.id===sp.id?{...x,scope:v as any}:x));
+                          markDirty();
+                        }}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="国际级">国际级</SelectItem>
+                          <SelectItem value="国家级">国家级</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">成绩</Label>
+                      <Select
+                        value={sp.result}
+                        onValueChange={v=>{
+                          setSports(list=>list.map(x=>x.id===sp.id?{...x,result:v as any}:x));
+                          markDirty();
+                        }}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="冠军">冠军</SelectItem>
+                          <SelectItem value="亚军">亚军</SelectItem>
+                          <SelectItem value="季军">季军</SelectItem>
+                          <SelectItem value="四至八名">四至八名</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 items-end">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={sp.isTeam}
+                        onCheckedChange={v=>{
+                          setSports(list=>list.map(x=>x.id===sp.id?{...x,isTeam:!!v}:x));
+                          markDirty();
+                        }}
+                      />
+                      <Label className="text-xs m-0">团队</Label>
+                    </div>
+                    {sp.isTeam && (
+                      <>
+                        <div>
+                          <Label className="text-xs">团队排名</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={sp.teamRank}
+                            onChange={e=>{
+                              setSports(list=>list.map(x=>x.id===sp.id?{...x,teamRank:+e.target.value}:x));
+                              markDirty();
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">团队人数</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={sp.teamSize}
+                            onChange={e=>{
+                              setSports(list=>list.map(x=>x.id===sp.id?{...x,teamSize:+e.target.value}:x));
+                              markDirty();
+                            }}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </Card>
+              ))}
+              <p className="text-[10px] text-gray-500">国际/国家级计分按规则折算，计入综合表现上限。</p>
+            </CardContent>
+          </Card>
 
           {/* 特殊学术专长 */}
           <Card>

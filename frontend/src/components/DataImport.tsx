@@ -49,7 +49,18 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
   // 用户管理相关状态
   const [userList, setUserList] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [createForm, setCreateForm] = useState({
+  const [createForm, setCreateForm] = useState<{
+    studentId: string;
+    password: string;
+    role: string;
+    name: string;
+    department: string;
+    major: string;
+    gpa?: string;
+    academicRank?: string;
+    majorTotal?: string;
+    convertedScore?: string;
+  }>({
     studentId: '',
     password: '',
     role: 'STUDENT',
@@ -69,7 +80,7 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
 
   // 行内编辑状态
   const [editRow, setEditRow] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState<{ gpa?: string; academicRank?: string; majorTotal?: string; name?: string; department?: string; major?: string }>({});
+  const [editValues, setEditValues] = useState<{ gpa?: string; academicRank?: string; majorTotal?: string; convertedScore?: string; name?: string; department?: string; major?: string }>({});
   const [savingRow, setSavingRow] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -201,9 +212,9 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
 
   const downloadAcademicTemplate = () => {
     const data = [
-      ['学号', '姓名', '学院', '专业', 'GPA', '学业排名', '专业总人数'],
-      ['20250001', '张三', '信息学院', '软件工程', '3.85', '5', '120'],
-      ['20250002', '李四', '信息学院', '软件工程', '3.92', '3', '120']
+      ['学号', '姓名', '学院', '专业', 'GPA', '学业排名', '专业总人数', '换算后的成绩'],
+      ['20250001', '张三', '信息学院', '软件工程', '3.85', '5', '120', '94.5'],
+      ['20250002', '李四', '信息学院', '软件工程', '3.92', '3', '120', '96.2']
     ];
     const csv = data.map(r => r.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -215,9 +226,9 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
 
   const downloadTemplate = () => {
     const data = [
-      ['学号','姓名','学院','专业','角色(可选)','GPA(可选 0~4)','学业排名(可选)','专业总人数(可选)'],
-      ['20250001','张三','信息学院','软件工程','STUDENT','3.85','5','120'],
-      ['20250002','李四','信息学院','软件工程','REVIEWER','','','']
+      ['学号','姓名','学院','专业','角色(可选)','GPA(可选 0~4)','学业排名(可选)','专业总人数(可选)','换算后的成绩(可选)'],
+      ['20250001','张三','信息学院','软件工程','STUDENT','3.85','5','120','94.5'],
+      ['20250002','李四','信息学院','软件工程','REVIEWER','','','','']
     ];
     const csv = data.map(r=>r.join(',')).join('\n');
     const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
@@ -312,6 +323,7 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
       gpa: u.gpa == null ? '' : String(u.gpa),
       academicRank: u.academicRank == null ? '' : String(u.academicRank),
       majorTotal: u.majorTotal == null ? '' : String(u.majorTotal),
+      convertedScore: u.convertedScore == null ? '' : String(u.convertedScore),
       name: u.name || '',
       department: u.department || '',
       major: u.major || ''
@@ -330,6 +342,7 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
       if (editValues.gpa !== undefined) payload.gpa = editValues.gpa === '' ? null : Number(editValues.gpa);
       if (editValues.academicRank !== undefined) payload.academicRank = editValues.academicRank === '' ? null : Number(editValues.academicRank);
       if (editValues.majorTotal !== undefined) payload.majorTotal = editValues.majorTotal === '' ? null : Number(editValues.majorTotal);
+      if (editValues.convertedScore !== undefined) payload.convertedScore = editValues.convertedScore === '' ? null : Number(editValues.convertedScore);
       if (editValues.name !== undefined) payload.name = editValues.name;
       if (editValues.department !== undefined) payload.department = editValues.department;
       if (editValues.major !== undefined) payload.major = editValues.major;
@@ -338,7 +351,7 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
       if (!res.ok) {
         toast.error('更新失败: ' + (data.error || '未知错误'));
       } else {
-        setUserList(list => list.map(u => u.studentId === studentId ? { ...u, ...{ gpa: data.gpa, academicRank: data.academicRank, majorTotal: data.majorTotal, name: data.name, department: data.department, major: data.major }} : u));
+        setUserList(list => list.map(u => u.studentId === studentId ? { ...u, ...{ gpa: data.gpa, academicRank: data.academicRank, majorTotal: data.majorTotal, convertedScore: data.convertedScore, name: data.name, department: data.department, major: data.major }} : u));
         toast.success('更新成功');
         cancelEdit();
       }
@@ -592,6 +605,22 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
                         <Label>专业</Label>
                         <Input value={createForm.major} onChange={e=>setCreateForm(f=>({...f,major:e.target.value}))} required />
                       </div>
+                      <div>
+                        <Label>GPA (可选, 0-4)</Label>
+                        <Input type="number" step="0.0001" min="0" max="4" placeholder="例如: 3.85" onChange={e=>setCreateForm(f=>({...f,gpa:e.target.value}))} />
+                      </div>
+                      <div>
+                        <Label>学业排名 (可选)</Label>
+                        <Input type="number" min="1" placeholder="例如: 5" onChange={e=>setCreateForm(f=>({...f,academicRank:e.target.value}))} />
+                      </div>
+                      <div>
+                        <Label>专业总人数 (可选)</Label>
+                        <Input type="number" min="1" placeholder="例如: 120" onChange={e=>setCreateForm(f=>({...f,majorTotal:e.target.value}))} />
+                      </div>
+                      <div>
+                        <Label>换算后的成绩 (可选, 0-100)</Label>
+                        <Input type="number" step="0.0001" min="0" max="100" placeholder="例如: 94.5" onChange={e=>setCreateForm(f=>({...f,convertedScore:e.target.value}))} />
+                      </div>
                     </>
                   )}
                 </div>
@@ -628,6 +657,7 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
                       <TableHead>GPA</TableHead>
                       <TableHead>学业排名</TableHead>
                       <TableHead>专业总人数</TableHead>
+                      <TableHead>换算后的成绩</TableHead>
                       <TableHead>角色</TableHead>
                       <TableHead className="min-w-[150px]">操作</TableHead>
                     </TableRow>
@@ -644,6 +674,7 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
                           <TableCell>{editing ? <Input value={editValues.gpa} onChange={e=>setEditValues(v=>({...v,gpa:e.target.value}))} className="w-20" /> : (u.gpa ?? '-')}</TableCell>
                           <TableCell>{editing ? <Input value={editValues.academicRank} onChange={e=>setEditValues(v=>({...v,academicRank:e.target.value}))} className="w-20" /> : (u.academicRank ?? '-')}</TableCell>
                           <TableCell>{editing ? <Input value={editValues.majorTotal} onChange={e=>setEditValues(v=>({...v,majorTotal:e.target.value}))} className="w-20" /> : (u.majorTotal ?? '-')}</TableCell>
+                          <TableCell>{editing ? <Input value={editValues.convertedScore} onChange={e=>setEditValues(v=>({...v,convertedScore:e.target.value}))} className="w-24" /> : (u.convertedScore ?? '-')}</TableCell>
                           <TableCell>{(u.role || (u.roles && Array.isArray(u.roles)? [...u.roles][0] : '-')) || '-'}</TableCell>
                           <TableCell className="space-x-1">
                             {editing ? (
@@ -665,7 +696,7 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
                       );
                     })}
                     {userList.length===0 && !loadingUsers && (
-                      <TableRow><TableCell colSpan={9} className="text-center text-sm text-gray-500">暂无用户</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={10} className="text-center text-sm text-gray-500">暂无用户</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>

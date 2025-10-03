@@ -89,6 +89,7 @@ public class UserController {
         body.put("gpa", user.getGpa());
         body.put("academicRank", user.getAcademicRank());
         body.put("majorTotal", user.getMajorTotal());
+        body.put("convertedScore", user.getConvertedScore());
         return ResponseEntity.ok(body);
     }
 
@@ -105,6 +106,7 @@ public class UserController {
             m.put("gpa", u.getGpa());
             m.put("academicRank", u.getAcademicRank());
             m.put("majorTotal", u.getMajorTotal());
+            m.put("convertedScore", u.getConvertedScore());
             m.put("roles", u.getRoles());
             m.put("role", u.getRoles().stream().findFirst().orElse(null));
             list.add(m);
@@ -163,6 +165,7 @@ public class UserController {
             resp.put("gpa", savedUser.getGpa());
             resp.put("academicRank", savedUser.getAcademicRank());
             resp.put("majorTotal", savedUser.getMajorTotal());
+            resp.put("convertedScore", savedUser.getConvertedScore());
             resp.put("roles", savedUser.getRoles());
             resp.put("role", role);
             return ResponseEntity.ok(resp);
@@ -263,6 +266,7 @@ public class UserController {
                 if (req.getGpa()!=null) { double g=req.getGpa(); if (g>=0 && g<=4) { u.setGpa(g); updates++; } else ignored.add("GPA"); }
                 if (req.getAcademicRank()!=null) { int r=req.getAcademicRank(); if (r>0) { u.setAcademicRank(r); updates++; } else ignored.add("学业排名"); }
                 if (req.getMajorTotal()!=null) { int t=req.getMajorTotal(); if (t>0) { u.setMajorTotal(t); updates++; } else ignored.add("专业总人数"); }
+                if (req.getConvertedScore()!=null) { double c=req.getConvertedScore(); if (c>=0 && c<=100) { u.setConvertedScore(c); updates++; } else ignored.add("换算后成绩"); }
                 userRepository.save(u);
                 Map<String,Object> body = new HashMap<>();
                 body.put("studentId", u.getStudentId());
@@ -271,6 +275,7 @@ public class UserController {
                 body.put("gpa", u.getGpa());
                 body.put("academicRank", u.getAcademicRank());
                 body.put("majorTotal", u.getMajorTotal());
+                body.put("convertedScore", u.getConvertedScore());
                 body.put("name", u.getName());
                 body.put("department", u.getDepartment());
                 body.put("major", u.getMajor());
@@ -298,6 +303,7 @@ public class UserController {
             if (req.getGpa()!=null) { double g=req.getGpa(); if (g>=0 && g<=4) { if(!Objects.equals(u.getGpa(), g)){ u.setGpa(g); updates++; } } else ignored.add("gpa范围"); }
             if (req.getAcademicRank()!=null) { int r=req.getAcademicRank(); if (r>0) { if(!Objects.equals(u.getAcademicRank(), r)){ u.setAcademicRank(r); updates++; } } else ignored.add("学业排名范围"); }
             if (req.getMajorTotal()!=null) { int t=req.getMajorTotal(); if (t>0) { if(!Objects.equals(u.getMajorTotal(), t)){ u.setMajorTotal(t); updates++; } } else ignored.add("专业总人数范围"); }
+            if (req.getConvertedScore()!=null) { double c=req.getConvertedScore(); if (c>=0 && c<=100) { if(!Objects.equals(u.getConvertedScore(), c)){ u.setConvertedScore(c); updates++; } } else ignored.add("换算后成绩范围"); }
             userRepository.save(u);
             Map<String,Object> body = new HashMap<>();
             body.put("updates", updates);
@@ -306,6 +312,7 @@ public class UserController {
             body.put("gpa", u.getGpa());
             body.put("academicRank", u.getAcademicRank());
             body.put("majorTotal", u.getMajorTotal());
+            body.put("convertedScore", u.getConvertedScore());
             body.put("name", u.getName());
             body.put("department", u.getDepartment());
             body.put("major", u.getMajor());

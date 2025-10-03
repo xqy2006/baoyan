@@ -7,6 +7,7 @@ public class AcademicUpdateRequest {
     private String department;
     private String major;
     private String name;
+    private Double convertedScore;
 
     public Double getGpa() { return gpa; }
     public void setGpa(Double gpa) { this.gpa = gpa; }
@@ -20,5 +21,6 @@ public class AcademicUpdateRequest {
     public void setMajor(String major) { this.major = major; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+    public Double getConvertedScore() { return convertedScore; }
+    public void setConvertedScore(Double convertedScore) { this.convertedScore = convertedScore; }
 }
-

@@ -27,7 +27,18 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({children}) 
       const data = await res.json();
       const primaryRole = (data.role || 'STUDENT');
       if (!['ADMIN','REVIEWER','STUDENT'].includes(primaryRole)) return false;
-      setUser({ id: data.studentId || 'me', studentId: data.studentId, name: data.name || data.studentId || '用户', role: primaryRole, department: data.department });
+      setUser({
+        id: data.studentId || 'me',
+        studentId: data.studentId,
+        name: data.name || data.studentId || '用户',
+        role: primaryRole,
+        department: data.department,
+        major: data.major,
+        gpa: data.gpa,
+        academicRank: data.academicRank,
+        majorTotal: data.majorTotal,
+        convertedScore: data.convertedScore
+      });
       return true;
     } catch { setUser(null); return false; }
   }, []);

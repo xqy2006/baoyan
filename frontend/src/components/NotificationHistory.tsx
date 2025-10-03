@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Bell, Trash2, RefreshCw, Eye, X } from 'lucide-react';
 import { useNotifications } from './hooks/useNotifications';
+import { useAuth } from '../context/AuthContext';
 import {
   getStoredNotifications,
   markAllAsRead,
@@ -20,11 +21,16 @@ interface NotificationHistoryProps {
 export const NotificationHistory: React.FC<NotificationHistoryProps> = ({ className = '' }) => {
   const [notifications, setNotifications] = useState<StoredNotification[]>([]);
   const [loading, setLoading] = useState(false);
-  const { checkForNewMessages, fetchUnreadCount } = useNotifications();
+  const { user } = useAuth();
+  const userId = user?.studentId || user?.id;
+  const { checkForNewMessages, fetchUnreadCount } = useNotifications({
+    userRole: user?.role,
+    userId
+  });
 
   // 从 localStorage 加载通知
   const loadNotifications = () => {
-    const stored = getStoredNotifications();
+    const stored = getStoredNotifications(userId);
     setNotifications(stored);
   };
 
@@ -46,34 +52,34 @@ export const NotificationHistory: React.FC<NotificationHistoryProps> = ({ classN
 
   // 标记所有消息为已读
   const handleMarkAllAsRead = () => {
-    markAllAsRead();
+    markAllAsRead(userId);
     loadNotifications();
     fetchUnreadCount();
   };
 
   // 标记单条消息为已读
   const handleMarkAsRead = (id: string) => {
-    markAsRead(id);
+    markAsRead(id, userId);
     loadNotifications();
   };
 
   // 删除单条通知
   const handleDelete = (id: string) => {
-    deleteNotification(id);
+    deleteNotification(id, userId);
     loadNotifications();
   };
 
   // 清空所有通知
   const handleClearAll = () => {
     if (confirm('确定要清空所有通知记录吗？此操作不可恢复。')) {
-      clearAllNotifications();
+      clearAllNotifications(userId);
       loadNotifications();
     }
   };
 
   useEffect(() => {
     loadNotifications();
-  }, []);
+  }, [userId]); // 当用户ID变化时重新加载
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);

@@ -193,6 +193,14 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
                 {appState.basicInfo.academicRanking}/{appState.basicInfo.totalStudents}
               </span>
             </div>
+            {appState.basicInfo.convertedScore && (
+              <div className="min-w-0">
+                <span className="text-gray-600 block sm:inline">换算后的成绩：</span>
+                <span className="block sm:inline text-green-600 font-medium">
+                  {appState.basicInfo.convertedScore}
+                </span>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -415,33 +423,155 @@ export const ApplicationReview: React.FC<ApplicationReviewProps> = ({ applicatio
             <TabsContent value="comprehensive" className="p-4 space-y-4">
               {/* 志愿服务 */}
               <div>
-                <h4 className="text-sm mb-3">志愿服务</h4>
-                <div className="p-3 bg-gray-50 rounded">
-                  <p className="text-sm">
-                    志愿服务时长：{compPerf.volunteerService.hours}小时
-                  </p>
-                  <p className="text-xs text-blue-600 mt-1">
-                    加分：{compPerf.volunteerService.totalScore}分
-                  </p>
+                <h4 className="text-sm font-medium mb-3">志愿服务</h4>
+                <div className="space-y-3">
+                  {/* 志愿服务总时长 */}
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">总时长</span>
+                      <span className="text-sm font-semibold">{compPerf.volunteerService?.hours || 0} 小时</span>
+                    </div>
+                  </div>
+
+                  {/* 志愿服务分段记录 */}
+                  {compPerf.volunteerService?.segments && compPerf.volunteerService.segments.length > 0 && (
+                    <div className="p-3 bg-gray-50 rounded">
+                      <h5 className="text-xs font-medium mb-2 text-gray-700">时长分段明细</h5>
+                      <div className="space-y-2">
+                        {compPerf.volunteerService.segments.map((seg: any, idx: number) => (
+                          <div key={idx} className="flex justify-between text-xs">
+                            <span className="text-gray-600">
+                              {seg.type === 'normal' ? '普通志愿服务' :
+                               seg.type === 'large_event' ? '大型赛会（折半）' :
+                               '支教活动（折半）'}
+                            </span>
+                            <span>{seg.hours} 小时</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 志愿服务表彰 */}
+                  {compPerf.volunteerService?.awards && compPerf.volunteerService.awards.length > 0 && (
+                    <div className="p-3 bg-gray-50 rounded">
+                      <h5 className="text-xs font-medium mb-2 text-gray-700">志愿服务表彰</h5>
+                      <div className="space-y-2">
+                        {compPerf.volunteerService.awards.map((award: any, idx: number) => (
+                          <div key={idx} className="flex justify-between text-xs">
+                            <span className="text-gray-600">
+                              {award.level} - {
+                                award.role === 'PERSONAL' ? '个人' :
+                                award.role === 'TEAM_LEADER' ? '队长' :
+                                '队员（减半）'
+                              }
+                            </span>
+                            <span className="text-blue-600">
+                              {award.level === '国家级' ? '1.0分' :
+                               award.level === '省级' ? '0.5分' : '0.25分'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 志愿服务总分 - 使用前端计算逻辑 */}
+                  <div className="p-3 bg-green-50 border border-green-200 rounded">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium text-green-800">志愿服务总分</span>
+                      <span className="text-sm font-semibold text-green-600">
+                        {(() => {
+                          // 使用与后端相同的计算逻辑
+                          const hours = parseFloat(compPerf.volunteerService?.hours || '0') || 0;
+                          const segments = compPerf.volunteerService?.segments || [];
+                          const awards = compPerf.volunteerService?.awards || [];
+
+                          // 计算工时积分
+                          let effectiveHours = 0;
+                          if (segments.length > 0) {
+                            // 如果有分段，使用分段计算
+                            segments.forEach((seg: any) => {
+                              const segHours = parseFloat(seg.hours || '0') || 0;
+                              if (seg.type === 'large_event' || seg.type === 'support') {
+                                effectiveHours += segHours * 0.5; // 大型赛会和支教折半
+                              } else {
+                                effectiveHours += segHours;
+                              }
+                            });
+                          } else {
+                            // 如果没有分段，全部按普通志愿服务计算
+                            effectiveHours = hours;
+                          }
+
+                          let hourScore = 0;
+                          if (effectiveHours >= 200) {
+                            // ≥200小时后，每2小时加0.05分，上限1分
+                            const extraHours = effectiveHours - 200;
+                            hourScore = Math.min(1.0, extraHours / 2 * 0.05);
+                          }
+
+                          // 计算表彰加分（取最高）
+                          let awardScore = 0;
+                          awards.forEach((award: any) => {
+                            let baseScore = 0;
+                            if (award.level === '国家级') baseScore = 1.0;
+                            else if (award.level === '省级') baseScore = 0.5;
+                            else if (award.level === '校级') baseScore = 0.25;
+
+                            // 队员减半
+                            if (award.role === 'TEAM_MEMBER') {
+                              baseScore *= 0.5;
+                            }
+
+                            awardScore = Math.max(awardScore, baseScore);
+                          });
+
+                          const totalScore = Math.min(1.0, hourScore + awardScore);
+                          return totalScore.toFixed(2) + ' 分';
+                        })()}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {/* 社会工作 */}
-              {compPerf.socialWork.length > 0 && (
+              {compPerf.socialWork && compPerf.socialWork.length > 0 && (
                 <div>
-                  <h4 className="text-sm mb-3">社会工作</h4>
-                  {compPerf.socialWork.map((work, index) => (
-                    <div key={index} className="p-3 bg-gray-50 rounded mb-2">
-                      <p className="text-sm">{work.position}</p>
-                      <p className="text-xs text-gray-600">任职时长：{work.duration}</p>
-                      <p className="text-xs text-blue-600 mt-1">加分：{work.score}分</p>
-                    </div>
-                  ))}
+                  <h4 className="text-sm font-medium mb-3">社会工作</h4>
+                  <div className="space-y-2">
+                    {compPerf.socialWork.map((work: any, index: number) => (
+                      <div key={index} className="p-3 bg-gray-50 rounded border border-gray-200">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <h5 className="text-sm font-medium">{work.position || '未填写职务'}</h5>
+                            <p className="text-xs text-gray-600 mt-1">
+                              {work.year}年 · {work.duration || '未填写时长'}
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {work.level === 'EXEC' ? '执行主席（2.0）' :
+                             work.level === 'PRESIDIUM' ? '主席团（1.5）' :
+                             work.level === 'HEAD' ? '部长级（1.0）' :
+                             work.level === 'DEPUTY' ? '副部长（0.75）' :
+                             '委员（0.5）'}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-gray-600">评分：{work.rating || 0}/100</span>
+                          <span className="text-blue-600 font-medium">
+                            加分：{work.score?.toFixed(2) || '0.00'} 分
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
               {/* 荣誉称号 */}
-              {compPerf.honors.length > 0 && (
+              {compPerf.honors && compPerf.honors.length > 0 && (
                 <div>
                   <h4 className="text-sm mb-3">荣誉称号</h4>
                   {compPerf.honors.map((honor, index) => (

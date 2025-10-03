@@ -28,8 +28,11 @@ interface NotificationProviderProps {
 export const NotificationProvider: React.FC<NotificationProviderProps> = ({ children }) => {
   const { user } = useAuth();
 
-  // 传递用户角色给 useNotifications
-  const notifications = useNotifications({ userRole: user?.role });
+  // 传递用户角色和用户ID给 useNotifications
+  const notifications = useNotifications({
+    userRole: user?.role,
+    userId: user?.studentId || user?.id  // 使用学号作为用户ID
+  });
 
   // 当用户登录时开始轮询，登出时停止轮询
   useEffect(() => {

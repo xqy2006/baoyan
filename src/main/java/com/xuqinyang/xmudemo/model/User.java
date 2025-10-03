@@ -28,6 +28,8 @@ public class User {
     private Integer academicRank;
     // 专业总人数（用于排名参考）
     private Integer majorTotal;
+    // 换算后的成绩（百分制，管理员导入的学业综合成绩）
+    private Double convertedScore;
 
     @ElementCollection(targetClass = Role.class, fetch = FetchType.EAGER)
     @CollectionTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"))
@@ -144,4 +146,12 @@ public class User {
 
     public Integer getMajorTotal() { return majorTotal; }
     public void setMajorTotal(Integer majorTotal) { this.majorTotal = majorTotal; }
+
+    public Double getConvertedScore() {
+        return convertedScore;
+    }
+
+    public void setConvertedScore(Double convertedScore) {
+        this.convertedScore = convertedScore;
+    }
 }
