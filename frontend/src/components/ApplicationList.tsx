@@ -96,7 +96,7 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
     await load();
   };
 
-  const handleSystemReview = (id:string)=> action(id,'system-review').catch(e=>toast.error(e.message));
+  const handleAdminStart = (id:string)=> action(id,'admin-start').catch(e=>toast.error(e.message));
   const handleAdminApprove = (id:string)=> action(id,'admin-review', { approve:true, comment: reviewComments[id]||'' }).catch(e=>toast.error(e.message));
   const handleAdminReject = (id:string)=> {
     const rc = reviewComments[id]||'';
@@ -190,7 +190,7 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
                   </div>
                   {(isAdmin || isReviewer) && (
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap">
-                      {application.status==='system_reviewing' && <Button size="sm" variant="outline" onClick={()=>handleSystemReview(application.id)}><span className="text-xs sm:text-sm">系统审核</span></Button>}
+                      {application.status==='system_approved' && <Button size="sm" variant="outline" onClick={()=>handleAdminStart(application.id)}><span className="text-xs sm:text-sm">进入人工审核</span></Button>}
                       {application.status==='admin_reviewing' && (
                         <>
                           <Input placeholder="审核意见(拒绝必填)" value={reviewComments[application.id]||''} onChange={e=> setReviewComments(m=>({...m,[application.id]:e.target.value}))} className="h-8 text-xs sm:text-sm w-full sm:w-52" />

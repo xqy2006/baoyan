@@ -327,12 +327,7 @@ public class MessageQueueListener {
                 applicationRepository.save(app);
                 cacheService.evictCache("applications", applicationId.toString());
 
-                userNotificationService.createNotification(
-                    app.getUserId(),
-                    "申请提交成功",
-                    "您的申请已成功提交，正在等待审核",
-                    "APPLICATION_SUBMITTED"
-                );
+                // 移除申请提交成功通知 - 自动审核会快速处理，不需要额外通知
                 log.info("Application {} submitted successfully", applicationId);
             }
         } catch (Exception e) {
@@ -367,6 +362,9 @@ public class MessageQueueListener {
                 applicationRepository.save(app);
                 cacheService.evictCache("applications", applicationId.toString());
 
+                // 清除待审核数量缓存（所有审核员）
+                evictAllReviewerCaches();
+
                 userNotificationService.createNotification(
                     app.getUserId(),
                     "申请通过",
@@ -391,6 +389,9 @@ public class MessageQueueListener {
                 applicationRepository.save(app);
                 cacheService.evictCache("applications", applicationId.toString());
 
+                // 清除待审核数量缓存（所有审核员）
+                evictAllReviewerCaches();
+
                 userNotificationService.createNotification(
                     app.getUserId(),
                     "申请未通过",
@@ -401,6 +402,19 @@ public class MessageQueueListener {
             }
         } catch (Exception e) {
             log.error("Failed to process application rejection: {}", applicationId, e);
+        }
+    }
+
+    /**
+     * 清除所有审核员的待审核数量缓存
+     */
+    private void evictAllReviewerCaches() {
+        try {
+            // 清除所有待审核计数缓存（使用通配符模式）
+            cacheService.evictCache("application:pending:count", "*");
+            log.debug("Evicted all reviewer pending review caches");
+        } catch (Exception e) {
+            log.warn("Failed to evict reviewer caches: {}", e.getMessage());
         }
     }
 
@@ -490,7 +504,8 @@ public class MessageQueueListener {
     private void processNotification(Long userId, String title, String content, String type) {
         log.info("Processing notification for user {}: {}", userId, title);
         try {
-            userNotificationService.createNotification(userId, title, content, type);
+            // 使用同步方法直接创建通知（避免消息队列循环）
+            userNotificationService.createNotificationSync(userId, title, content, type);
             performanceMonitorService.recordBusinessMetrics("notification_sent", 1.0);
             log.info("Notification created for user {}: {}", userId, title);
         } catch (Exception e) {
@@ -534,14 +549,8 @@ public class MessageQueueListener {
             switch (action) {
                 case "LOGIN":
                     performanceMonitorService.recordBusinessMetrics("login_count", 1.0);
-                    userNotificationService.createNotificationByStudentId(
-                        userId,
-                        "登录通知",
-                        String.format("您的账户从IP地址 %s (%s) 登录", ip,
-                            userAgent != null && userAgent.length() > 50 ?
-                            userAgent.substring(0, 50) + "..." : userAgent),
-                        "LOGIN_NOTIFICATION"
-                    );
+                    // 移除登录通知 - 不需要每次登录都发通知
+                    log.debug("User {} logged in from IP {}", userId, ip);
                     break;
                 case "LOGOUT":
                     performanceMonitorService.recordBusinessMetrics("logout_count", 1.0);
@@ -551,6 +560,7 @@ public class MessageQueueListener {
                     break;
                 case "LOGIN_FAILED":
                     performanceMonitorService.recordBusinessMetrics("login_failed_count", 1.0);
+                    // 保留登录失败警告（安全相关）
                     userNotificationService.createNotificationByStudentId(
                         userId,
                         "登录失败警告",

@@ -381,11 +381,26 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
       console.debug('[APPLICATION][SUBMIT] id=', newId, 'files snapshot=', snapshot, 'payloadUploadedFiles=', finalPayloadObj.uploadedFiles);
       const r = await fetchWithAuth(`/api/applications/${newId}/submit`, { method:'POST', headers:{'Content-Type':'application/json'}, body: finalPayload });
       if(!r.ok){ const err = await r.json().catch(()=>({})); const msg = err.error||'提交失败'; setErrorMsg(msg); toast.error(msg); return; }
+
+      // 立即更新前端状态，让用户看到提交成功
+      const now = new Date().toISOString();
+      setStatus('SYSTEM_REVIEWING');
+      setSubmittedAt(now);
       toast.success('提交成功');
       localStorage.removeItem(localDraftKey);
-      const latest = await fetchWithAuth(`/api/applications/activity/${activity.id}/mine`);
-      if(latest.ok){ const a = await latest.json(); setStatus(a.status||'SYSTEM_REVIEWING'); setSubmittedAt(a.submittedAt||'已提交'); }
-      await fetchBackendScores();
+
+      // 后台异步获取最新状态和成绩，不阻塞用户体验
+      fetchWithAuth(`/api/applications/activity/${activity.id}/mine`)
+        .then(async latest => {
+          if(latest.ok){
+            const a = await latest.json();
+            setStatus(a.status || 'SYSTEM_REVIEWING');
+            setSubmittedAt(a.submittedAt || now);
+          }
+        })
+        .catch(err => console.error('Failed to fetch latest status:', err));
+
+      fetchBackendScores().catch(err => console.error('Failed to fetch scores:', err));
       onSubmit();
     } catch(e:any){ setErrorMsg(e.message); toast.error(e.message); }
     finally { setSubmitting(false); }

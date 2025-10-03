@@ -106,11 +106,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        // 跳过健康检查和静态资源
+        // 跳过健康检查、静态资源和通知API
         return uri.startsWith("/actuator/health") ||
                uri.startsWith("/static/") ||
                uri.startsWith("/css/") ||
                uri.startsWith("/js/") ||
-               uri.startsWith("/images/");
+               uri.startsWith("/images/") ||
+               uri.startsWith("/api/notifications/"); // 通知API不限流
     }
 }

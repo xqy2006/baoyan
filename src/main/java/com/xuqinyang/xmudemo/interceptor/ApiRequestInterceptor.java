@@ -85,8 +85,8 @@ public class ApiRequestInterceptor implements HandlerInterceptor {
             // 记录性能指标
             performanceMonitorService.recordRequest(method, uri, statusCode, duration);
 
-            // 如果有异常或错误状态码，发送错误统计
-            if (ex != null || statusCode >= 400) {
+            // 只在真正的错误情况下发送错误统计（不包括权限检查失败但最终成功的情况）
+            if (ex != null || (statusCode >= 400 && statusCode != 401 && statusCode != 403)) {
                 messageQueueService.sendDataStatisticsMessage(
                     "SYSTEM",
                     "ERROR",

@@ -15,6 +15,7 @@ import { ApplicationReview } from './components/ApplicationReview';
 import { ApplicationForm } from './components/ApplicationForm';
 import { Account } from './components/Account';
 import { NotFound } from './components/NotFound';
+import { NotificationHistory } from './components/NotificationHistory';
 import { User } from './context/AuthContext';
 import { Button } from './components/ui/button';
 import { useDeviceType } from './components/hooks/useDeviceType';
@@ -253,6 +254,7 @@ const App: React.FC = () => {
       <Route path="/import" element={<RequireAuth roles={['ADMIN']}><Shell><DataImport role={user?.role||'STUDENT'} /></Shell></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth roles={['ADMIN']}><Shell><SystemSettings/></Shell></RequireAuth>} />
       <Route path="/account" element={<RequireAuth><Shell><Account role={user?.role||'STUDENT'} /></Shell></RequireAuth>} />
+      <Route path="/notifications" element={<RequireAuth><Shell><NotificationHistory /></Shell></RequireAuth>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

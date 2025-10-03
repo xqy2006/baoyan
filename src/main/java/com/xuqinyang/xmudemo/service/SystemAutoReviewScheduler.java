@@ -25,9 +25,9 @@ public class SystemAutoReviewScheduler {
     private final DistributedLockService distributedLockService;
 
     /**
-     * 每分钟执行一次系统自动审核
+     * 每15秒执行一次系统自动审核
      */
-    @Scheduled(fixedRate = 60000) // 60秒
+    @Scheduled(fixedRate = 15000) // 15秒
     public void scheduleSystemReviews() {
         String lockKey = "systemReview:scheduler";
 

@@ -588,6 +588,9 @@ public class ApplicationController {
         }, 5);
     }
 
+    // 已废弃：手动系统审核功能已被自动系统审核取代
+    // 保留代码以供参考，但不再对外暴露API
+    /*
     @PreAuthorize("hasAnyAuthority('ADMIN','REVIEWER')")
     @PostMapping("/{id}/system-review")
     public ResponseEntity<?> systemReview(@PathVariable Long id, HttpServletRequest request){
@@ -634,6 +637,7 @@ public class ApplicationController {
             }
         }, 5);
     }
+    */
 
     @PreAuthorize("hasAnyAuthority('ADMIN','REVIEWER')")
     @PostMapping("/{id}/admin-review")
@@ -668,20 +672,6 @@ public class ApplicationController {
                     Map.of("applicationId", id, "reviewerId", userId, "approved", decision.approve())
                 );
 
-                // 发送通知给申请人
-                if (app.getUser() != null) {
-                    String title = decision.approve() ? "申请已通过" : "申请被拒绝";
-                    String content = decision.approve() ?
-                        "恭喜！您的申请已通过审核。" :
-                        "很抱歉，您的申请未通过审核。原因：" + decision.comment();
-
-                    messageQueueService.sendNotificationMessage(
-                        app.getUser().getId(),
-                        title,
-                        content,
-                        "APPLICATION_" + action
-                    );
-                }
 
                 long duration = System.currentTimeMillis() - startTime;
                 performanceMonitorService.recordRequest("POST", "/api/applications/" + id + "/admin-review", 200, duration);

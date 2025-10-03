@@ -126,4 +126,33 @@ public class NotificationController {
             return ResponseEntity.internalServerError().body(Map.of("error", "预览通知失败"));
         }
     }
+
+    /**
+     * 获取审核员待处理的申请数量（新增功能）
+     */
+    @GetMapping("/pending-reviews")
+    @PreAuthorize("hasAnyAuthority('REVIEWER', 'ADMIN')")  // 修复：使用 hasAnyAuthority 而不是 hasAnyRole
+    public ResponseEntity<?> getPendingReviewCount() {
+        long startTime = System.currentTimeMillis();
+        String studentId = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        try {
+            long count = notificationService.getPendingReviewCountByStudentId(studentId);
+
+            long duration = System.currentTimeMillis() - startTime;
+            performanceMonitorService.recordRequest("GET", "/api/notifications/pending-reviews", 200, duration);
+
+            log.info("[PENDING_REVIEW_COUNT] Success for reviewer {}, count={}, duration={}ms",
+                studentId, count, duration);
+
+            return ResponseEntity.ok(Map.of("count", count));
+
+        } catch (Exception e) {
+            long duration = System.currentTimeMillis() - startTime;
+            performanceMonitorService.recordRequest("GET", "/api/notifications/pending-reviews", 500, duration);
+
+            log.error("[PENDING_REVIEW_COUNT] Error for reviewer {}, duration={}ms", studentId, duration, e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "获取待审核数量失败"));
+        }
+    }
 }

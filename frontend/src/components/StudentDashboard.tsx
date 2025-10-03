@@ -153,36 +153,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
         </Card>
       </div>
 
-      {/* 推免时间轴 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-            <Clock className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
-            <span>推免工作进度</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2.5 sm:space-y-3">
-            {timelineEvents.map((event, index) => (
-              <div key={index} className="flex items-start gap-2 sm:gap-3">
-                <div className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full flex-shrink-0 mt-1.5 ${
-                  event.status === 'completed' ? 'bg-green-500' :
-                  event.status === 'current' ? 'bg-blue-500' : 'bg-gray-300'
-                }`}></div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-0.5 sm:gap-2">
-                    <span className={`text-xs sm:text-sm break-words ${
-                      event.status === 'current' ? 'text-blue-600 font-medium' : 'text-gray-600'
-                    }`}>{event.event}</span>
-                    <span className="text-xs text-gray-500 flex-shrink-0">{event.date}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
       {/* 推免申请要求 */}
       <Card>
         <CardHeader>
@@ -306,7 +276,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
         </CardHeader>
         <CardContent>
           <div className="space-y-2.5 sm:space-y-3">
-            <div className="p-2.5 sm:p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="p-3 sm:p-4 md:p-5 bg-yellow-50 border border-yellow-200 rounded-lg">
               <div className="flex items-start gap-2">
                 <div className="w-2 h-2 bg-yellow-500 rounded-full flex-shrink-0 mt-1.5"></div>
                 <div className="min-w-0 flex-1">
@@ -318,7 +288,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
                 </div>
               </div>
             </div>
-            <div className="p-2.5 sm:p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="p-3 sm:p-4 md:p-5 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="flex items-start gap-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1.5"></div>
                 <div className="min-w-0 flex-1">
@@ -330,7 +300,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
                 </div>
               </div>
             </div>
-            <div className="p-2.5 sm:p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div className="p-3 sm:p-4 md:p-5 bg-green-50 border border-green-200 rounded-lg">
               <div className="flex items-start gap-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0 mt-1.5"></div>
                 <div className="min-w-0 flex-1">

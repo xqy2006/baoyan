@@ -414,7 +414,13 @@ public class ApplicationService {
             app.setStatus(approve ? ApplicationStatus.APPROVED : ApplicationStatus.REJECTED);
             app.setAdminReviewComment(comment);
             app.setAdminReviewedAt(LocalDateTime.now());
-            return applicationRepository.save(app);
+            Application saved = applicationRepository.save(app);
+
+            // 清除缓存确保状态更新
+            cacheService.evictCache("applications", id.toString());
+            cacheService.evictAllApplications();
+
+            return saved;
         }, 5);
     }
 
@@ -1096,6 +1102,12 @@ public class ApplicationService {
         String marker = "【复核发起"+LocalDateTime.now()+"】"+(reason==null||reason.isBlank()?"":" "+reason.trim());
         app.setAdminReviewComment((prev==null?"":prev+"\n")+marker);
         app.setStatus(ApplicationStatus.ADMIN_REVIEWING);
-        return applicationRepository.save(app);
+        Application saved = applicationRepository.save(app);
+
+        // 清除缓存确保状态更新
+        cacheService.evictCache("applications", id.toString());
+        cacheService.evictAllApplications();
+
+        return saved;
     }
 }

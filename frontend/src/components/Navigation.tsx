@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from './ui/button';
 import { User } from '../App';
 import { Home, FileText, Users, Settings, Upload, Activity } from 'lucide-react';
+import { NotificationBadge } from './NotificationBadge';
 
 interface NavigationProps {
   user: User;
@@ -62,6 +63,7 @@ export const Navigation: React.FC<NavigationProps> = ({ user, currentView, onVie
           </div>
         </div>
         <div className="hidden md:flex items-center gap-3 pr-2">
+          <NotificationBadge className="mr-1" />
           <span className="text-sm text-gray-600">{user.role}</span>
           <Button aria-label="账户" variant={currentView==='account'? 'default':'outline'} size="sm" onClick={()=>onViewChange('account')}>账户</Button>
         </div>
@@ -93,6 +95,10 @@ export const Navigation: React.FC<NavigationProps> = ({ user, currentView, onVie
           {isAdmin && <MobileButton view="activities" label="活动" icon={<Activity className="w-4 h-4" />} />}
           {isAdmin && <MobileButton view="import" label="用户" icon={<Upload className="w-4 h-4" />} />}
           {isAdmin && <MobileButton view="settings" label="设置" icon={<Settings className="w-4 h-4" />} />}
+          <div className="flex flex-col items-center py-1">
+            <NotificationBadge showIcon={true} className="scale-90" />
+            <span className="text-[11px] leading-none mt-0.5 text-gray-600">消息</span>
+          </div>
           <MobileButton view="account" label="账户" icon={<Users className="w-4 h-4" />} />
         </div>
       </nav>
