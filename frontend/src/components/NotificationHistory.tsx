@@ -2,54 +2,77 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Bell, Trash2, RefreshCw, Eye } from 'lucide-react';
-import { useNotifications, Notification } from './hooks/useNotifications';
+import { Bell, Trash2, RefreshCw, Eye, X } from 'lucide-react';
+import { useNotifications } from './hooks/useNotifications';
+import {
+  getStoredNotifications,
+  markAllAsRead,
+  markAsRead,
+  deleteNotification,
+  clearAllNotifications,
+  StoredNotification
+} from '../utils/notificationStorage';
 
 interface NotificationHistoryProps {
   className?: string;
 }
 
 export const NotificationHistory: React.FC<NotificationHistoryProps> = ({ className = '' }) => {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<StoredNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const { checkForNewMessages, fetchUnreadCount } = useNotifications();
 
-  // 预览未读通知
-  const fetchNotifications = async () => {
+  // 从 localStorage 加载通知
+  const loadNotifications = () => {
+    const stored = getStoredNotifications();
+    setNotifications(stored);
+  };
+
+  // 获取服务器端的新通知
+  const fetchNewNotifications = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/notifications/preview', {
-        credentials: 'include'
-      });
+      // 调用 checkForNewMessages 会自动获取新消息并保存到 localStorage
+      await checkForNewMessages();
 
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(data.notifications || []);
-      }
+      // 重新加载 localStorage 中的通知
+      loadNotifications();
     } catch (error) {
-      console.error('获取通知历史失败:', error);
+      console.error('获取通知失败:', error);
     } finally {
       setLoading(false);
     }
   };
 
   // 标记所有消息为已读
-  const markAllAsRead = async () => {
-    try {
-      await fetch('/api/notifications/consume', {
-        credentials: 'include'
-      });
+  const handleMarkAllAsRead = () => {
+    markAllAsRead();
+    loadNotifications();
+    fetchUnreadCount();
+  };
 
-      // 重新获取通知列表和计数
-      await fetchNotifications();
-      await fetchUnreadCount();
-    } catch (error) {
-      console.error('标记消息为已读失败:', error);
+  // 标记单条消息为已读
+  const handleMarkAsRead = (id: string) => {
+    markAsRead(id);
+    loadNotifications();
+  };
+
+  // 删除单条通知
+  const handleDelete = (id: string) => {
+    deleteNotification(id);
+    loadNotifications();
+  };
+
+  // 清空所有通知
+  const handleClearAll = () => {
+    if (confirm('确定要清空所有通知记录吗？此操作不可恢复。')) {
+      clearAllNotifications();
+      loadNotifications();
     }
   };
 
   useEffect(() => {
-    fetchNotifications();
+    loadNotifications();
   }, []);
 
   const formatDate = (dateString: string) => {
@@ -88,6 +111,8 @@ export const NotificationHistory: React.FC<NotificationHistoryProps> = ({ classN
     return typeMap[type] || { label: '通知', variant: 'secondary' as const };
   };
 
+  const unreadCount = notifications.filter(n => !n.isRead).length;
+
   return (
     <div className={`space-y-4 ${className}`}>
       <Card>
@@ -96,25 +121,41 @@ export const NotificationHistory: React.FC<NotificationHistoryProps> = ({ classN
             <CardTitle className="flex items-center gap-2">
               <Bell className="h-5 w-5" />
               消息通知
+              {unreadCount > 0 && (
+                <Badge variant="destructive" className="ml-2">
+                  {unreadCount} 条未读
+                </Badge>
+              )}
             </CardTitle>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={fetchNotifications}
+                onClick={fetchNewNotifications}
                 disabled={loading}
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 刷新
               </Button>
+              {notifications.length > 0 && unreadCount > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleMarkAllAsRead}
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  全部已读
+                </Button>
+              )}
               {notifications.length > 0 && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={markAllAsRead}
+                  onClick={handleClearAll}
+                  className="text-red-600 hover:text-red-700"
                 >
-                  <Eye className="h-4 w-4 mr-2" />
-                  全部已读
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  清空全部
                 </Button>
               )}
             </div>
@@ -133,21 +174,28 @@ export const NotificationHistory: React.FC<NotificationHistoryProps> = ({ classN
             </div>
           ) : (
             <div className="space-y-3">
-              {notifications.map((notification, index) => {
+              {notifications.map((notification) => {
                 const typeInfo = getNotificationTypeLabel(notification.type);
                 return (
                   <div
-                    key={`${notification.id}-${index}`}
-                    className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                    key={notification.id}
+                    className={`border rounded-lg p-4 transition-colors relative ${
+                      !notification.isRead 
+                        ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' 
+                        : 'hover:bg-gray-50'
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2">
+                          {!notification.isRead && (
+                            <div className="h-2 w-2 bg-blue-600 rounded-full"></div>
+                          )}
                           <Badge variant={typeInfo.variant} className="text-xs">
                             {typeInfo.label}
                           </Badge>
                           <span className="text-xs text-gray-500">
-                            {formatDate(notification.createdAt)}
+                            {formatDate(notification.receivedAt)}
                           </span>
                         </div>
                         <h4 className="font-medium text-gray-900 mb-1">
@@ -163,6 +211,7 @@ export const NotificationHistory: React.FC<NotificationHistoryProps> = ({ classN
                             className="mt-2 p-0 h-auto text-blue-600 hover:text-blue-800"
                             onClick={() => {
                               if (notification.data.actionUrl) {
+                                handleMarkAsRead(notification.id);
                                 window.location.href = notification.data.actionUrl;
                               }
                             }}
@@ -170,6 +219,28 @@ export const NotificationHistory: React.FC<NotificationHistoryProps> = ({ classN
                             查看详情 →
                           </Button>
                         )}
+                      </div>
+                      <div className="flex gap-1">
+                        {!notification.isRead && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleMarkAsRead(notification.id)}
+                            className="h-8 w-8 p-0"
+                            title="标记为已读"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(notification.id)}
+                          className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          title="删除"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   </div>

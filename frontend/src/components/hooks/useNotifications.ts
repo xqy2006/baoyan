@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ElNotification } from 'element-plus/es';
 import type { NotificationParams } from 'element-plus/es';
+import { saveNotifications } from '../../utils/notificationStorage';
 
 export interface Notification {
   id: string;
@@ -130,6 +131,9 @@ export const useNotifications = (props?: UseNotificationsProps) => {
         const data: NotificationResponse = await res.json();
 
         if (data.notifications && data.notifications.length > 0) {
+          // 保存到 localStorage
+          saveNotifications(data.notifications);
+
           // 合并重复消息
           const mergedNotifications = mergeNotifications(data.notifications);
 
@@ -138,7 +142,7 @@ export const useNotifications = (props?: UseNotificationsProps) => {
             showNotification(notification);
           });
 
-          // 更新未读数量为0
+          // 更新未读数量为0（服务端的未读数量）
           setUnreadCount(0);
         }
 
