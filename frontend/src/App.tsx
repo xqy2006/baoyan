@@ -254,8 +254,8 @@ const App: React.FC = () => {
       <Route path="/import" element={<RequireAuth roles={['ADMIN']}><Shell><DataImport role={user?.role||'STUDENT'} /></Shell></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth roles={['ADMIN']}><Shell><SystemSettings/></Shell></RequireAuth>} />
       <Route path="/account" element={<RequireAuth><Shell><Account role={user?.role||'STUDENT'} /></Shell></RequireAuth>} />
-      <Route path="/notifications" element={<RequireAuth><Shell><NotificationHistory /></Shell></RequireAuth>} />
-      <Route path="*" element={<NotFound />} />
+      <Route path="/messages" element={<RequireAuth><Shell><NotificationHistory /></Shell></RequireAuth>} />
+      <Route path="*" element={user ? <Shell><NotFound /></Shell> : <NotFound />} />
     </Routes>
   );
 };

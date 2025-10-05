@@ -153,6 +153,20 @@ public class UserController {
             u.setDepartment(req.getDepartment());
             u.setMajor(req.getMajor());
 
+            // 设置学业信息（如果提供）
+            if (req.getGpa() != null) {
+                u.setGpa(req.getGpa());
+            }
+            if (req.getAcademicRank() != null) {
+                u.setAcademicRank(req.getAcademicRank());
+            }
+            if (req.getMajorTotal() != null) {
+                u.setMajorTotal(req.getMajorTotal());
+            }
+            if (req.getConvertedScore() != null) {
+                u.setConvertedScore(req.getConvertedScore());
+            }
+
             // 使用UserService而不是直接操作repository
             User savedUser = userService.createUser(u);
 

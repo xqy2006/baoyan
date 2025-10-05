@@ -334,17 +334,51 @@ public class ApplicationService {
                 throw new IllegalStateException("当前状态不能提交");
             }
             JsonNode root = parseContent(app.getContent());
-            if(root.path("basicInfo").isMissingNode() || !root.path("basicInfo").has("name")){
+
+            // 从User表获取权威的学业数据，覆盖前端提交的数据
+            User u = app.getUser();
+            if (u != null) {
+                if(root.path("basicInfo").isMissingNode() || !root.path("basicInfo").has("name")){
+                    var o = root.isObject()? (com.fasterxml.jackson.databind.node.ObjectNode) root : MAPPER.createObjectNode();
+                    var basic = MAPPER.createObjectNode();
+                    basic.put("name", Optional.ofNullable(u.getName()).orElse(""));
+                    basic.put("studentId", u.getStudentId());
+                    basic.put("department", Optional.ofNullable(u.getDepartment()).orElse(""));
+                    basic.put("major", Optional.ofNullable(u.getMajor()).orElse(""));
+                    o.set("basicInfo", basic);
+                    try { app.setContent(MAPPER.writeValueAsString(o)); } catch(Exception ignored){}
+                    root = parseContent(app.getContent());
+                }
+
+                // 强制覆盖学业数据：如果User表中有管理员提供的数据，使用User表的数据
                 var o = root.isObject()? (com.fasterxml.jackson.databind.node.ObjectNode) root : MAPPER.createObjectNode();
-                var basic = MAPPER.createObjectNode();
-                User u = app.getUser();
-                basic.put("name", Optional.ofNullable(u.getName()).orElse(""));
-                basic.put("studentId", u.getStudentId());
-                basic.put("department", Optional.ofNullable(u.getDepartment()).orElse(""));
-                basic.put("major", Optional.ofNullable(u.getMajor()).orElse(""));
+                var basic = o.has("basicInfo") && o.get("basicInfo").isObject() ?
+                    (com.fasterxml.jackson.databind.node.ObjectNode) o.get("basicInfo") : MAPPER.createObjectNode();
+
+                // 确保基本信息存在
+                if (!basic.has("name")) basic.put("name", Optional.ofNullable(u.getName()).orElse(""));
+                if (!basic.has("studentId")) basic.put("studentId", u.getStudentId());
+                if (!basic.has("department")) basic.put("department", Optional.ofNullable(u.getDepartment()).orElse(""));
+                if (!basic.has("major")) basic.put("major", Optional.ofNullable(u.getMajor()).orElse(""));
+
+                // 如果管理员已设置学业数据，强制使用User表的数据（不信任前端）
+                if (u.getGpa() != null) {
+                    basic.put("gpa", u.getGpa().toString());
+                }
+                if (u.getAcademicRank() != null) {
+                    basic.put("academicRanking", u.getAcademicRank().toString());
+                }
+                if (u.getMajorTotal() != null) {
+                    basic.put("totalStudents", u.getMajorTotal().toString());
+                }
+                if (u.getConvertedScore() != null) {
+                    basic.put("convertedScore", u.getConvertedScore().toString());
+                }
+
                 o.set("basicInfo", basic);
                 try { app.setContent(MAPPER.writeValueAsString(o)); } catch(Exception ignored){}
             }
+
             recalcScores(app);
 
             // 修复：提交后进入系统审核状态，而不是直接通过

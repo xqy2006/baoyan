@@ -53,6 +53,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 预检请求放行
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // 错误页面放行
+                        .requestMatchers("/error").permitAll()
                         // 静态/前端 SPA 构建资源放行（根路径 & 资源目录）
                         .requestMatchers("/", "/index.html", "/favicon.ico", "/assets/**", "/favicon.png", "/manifest.json").permitAll()
                         // 显式前端 SPA 路由放行（避免刷新 403）

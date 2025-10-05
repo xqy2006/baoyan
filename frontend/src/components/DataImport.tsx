@@ -284,7 +284,31 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
       return;
     }
     try {
-      const res = await fetch('/api/users', { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(createForm) });
+      // 构建请求体，包含学业信息
+      const payload: any = {
+        studentId: createForm.studentId,
+        password: createForm.password,
+        role: createForm.role,
+        name: createForm.name,
+        department: createForm.department,
+        major: createForm.major
+      };
+
+      // 添加可选的学业信息字段
+      if (createForm.gpa) {
+        payload.gpa = parseFloat(createForm.gpa);
+      }
+      if (createForm.academicRank) {
+        payload.academicRank = parseInt(createForm.academicRank);
+      }
+      if (createForm.majorTotal) {
+        payload.majorTotal = parseInt(createForm.majorTotal);
+      }
+      if (createForm.convertedScore) {
+        payload.convertedScore = parseFloat(createForm.convertedScore);
+      }
+
+      const res = await fetch('/api/users', { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) {
         setCreateError(data.error || '创建失败');

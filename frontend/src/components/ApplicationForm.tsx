@@ -557,9 +557,42 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
               <div><Label>专业</Label><Input value={basicInfo.major} onChange={e=>handleBasicChange('major', e.target.value)} /></div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              <div><Label className="text-xs sm:text-sm">GPA</Label><Input value={basicInfo.gpa} onChange={e=>handleBasicChange('gpa', e.target.value)} /></div>
-              <div><Label className="text-xs sm:text-sm">学业排名</Label><Input value={basicInfo.academicRanking} onChange={e=>handleBasicChange('academicRanking', e.target.value)} /></div>
-              <div><Label className="text-xs sm:text-sm">专业总人数</Label><Input value={basicInfo.totalStudents} onChange={e=>handleBasicChange('totalStudents', e.target.value)} /></div>
+              <div>
+                <Label className="text-xs sm:text-sm flex items-center gap-1">
+                  GPA
+                  {user.gpa != null && <span className="text-[10px] text-gray-500">(已导入)</span>}
+                </Label>
+                <Input
+                  value={basicInfo.gpa}
+                  onChange={e=>handleBasicChange('gpa', e.target.value)}
+                  disabled={user.gpa != null}
+                  className={user.gpa != null ? 'bg-gray-100' : ''}
+                />
+              </div>
+              <div>
+                <Label className="text-xs sm:text-sm flex items-center gap-1">
+                  学业排名
+                  {user.academicRank != null && <span className="text-[10px] text-gray-500">(已导入)</span>}
+                </Label>
+                <Input
+                  value={basicInfo.academicRanking}
+                  onChange={e=>handleBasicChange('academicRanking', e.target.value)}
+                  disabled={user.academicRank != null}
+                  className={user.academicRank != null ? 'bg-gray-100' : ''}
+                />
+              </div>
+              <div>
+                <Label className="text-xs sm:text-sm flex items-center gap-1">
+                  专业总人数
+                  {user.majorTotal != null && <span className="text-[10px] text-gray-500">(已导入)</span>}
+                </Label>
+                <Input
+                  value={basicInfo.totalStudents}
+                  onChange={e=>handleBasicChange('totalStudents', e.target.value)}
+                  disabled={user.majorTotal != null}
+                  className={user.majorTotal != null ? 'bg-gray-100' : ''}
+                />
+              </div>
               <div>
                 <Label className="text-xs sm:text-sm flex items-center gap-1">
                   换算后的成绩
@@ -577,14 +610,6 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
                   className={user.convertedScore != null ? 'bg-gray-100' : ''}
                 />
               </div>
-            </div>
-            <div className="p-2 sm:p-3 bg-blue-50 border border-blue-200 rounded text-[10px] sm:text-xs">
-              <p className="font-medium mb-1">学业成绩说明：</p>
-              <ul className="list-disc list-inside space-y-0.5">
-                <li>如果用户数据中已有"换算后的成绩"，将优先使用该成绩（只读）</li>
-                <li>否则可以手动填写百分制成绩（0-100分）</li>
-                <li>如果都没有，系统将根据GPA和排名自动计算</li>
-              </ul>
             </div>
             <div>
               <Label>成绩单 *</Label>
