@@ -347,6 +347,48 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
 
   const validateBeforeSubmit = ():boolean => {
     const errs:string[]=[];
+
+    // 验证学业基础信息：当管理员未提供时，学生必须填写
+    if (user.gpa == null) {
+      if (!basicInfo.gpa || !basicInfo.gpa.trim()) {
+        errs.push('GPA为必填项，请填写');
+      } else {
+        const gpaNum = parseFloat(basicInfo.gpa);
+        if (isNaN(gpaNum) || gpaNum < 0 || gpaNum > 4) {
+          errs.push('GPA必须在0-4之间');
+        }
+      }
+    }
+
+    if (user.academicRank == null) {
+      if (!basicInfo.academicRanking || !basicInfo.academicRanking.trim()) {
+        errs.push('学业排名为必填项，请填写');
+      } else {
+        const rankNum = parseInt(basicInfo.academicRanking);
+        if (isNaN(rankNum) || rankNum < 1) {
+          errs.push('学业排名必须大于0');
+        }
+      }
+    }
+
+    if (user.majorTotal == null) {
+      if (!basicInfo.totalStudents || !basicInfo.totalStudents.trim()) {
+        errs.push('专业总人数为必填项，请填写');
+      } else {
+        const totalNum = parseInt(basicInfo.totalStudents);
+        if (isNaN(totalNum) || totalNum < 1) {
+          errs.push('专业总人数必须大于0');
+        }
+        // 验证排名不能大于总人数
+        if (basicInfo.academicRanking) {
+          const rankNum = parseInt(basicInfo.academicRanking);
+          if (!isNaN(rankNum) && !isNaN(totalNum) && rankNum > totalNum) {
+            errs.push('学业排名不能大于专业总人数');
+          }
+        }
+      }
+    }
+
     const nonEmptyPubs = publications.filter(p=> (p.title||'').trim() || p.journal || p.authors || p.proofFile);
     nonEmptyPubs.forEach((p,i)=>{ if(!p.title.trim()) errs.push(`论文${i+1} 标题为空`); if(p.authorRank && p.authorRank<1) errs.push(`论文${i+1} 作者排名应>=1`); if(p.totalAuthors && p.authorRank && p.totalAuthors<p.authorRank) errs.push(`论文${i+1} 作者排名大于总作者数`); });
     const nonEmptyComps = competitions.filter(c=> (c.name||'').trim() || c.award || c.proofFile);

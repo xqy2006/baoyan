@@ -30,9 +30,16 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = () => {
   const load = async () => {
     setLoading(true); setError('');
     try {
-      const res = await fetchWithAuth('/api/applications/review-queue');
+      // 优化：使用分页接口，只加载待审核的申请，按最新提交时间排序
+      const statusFilter = ['SYSTEM_REVIEWING', 'SYSTEM_APPROVED', 'ADMIN_REVIEWING', 'APPROVED', 'REJECTED']
+        .map(s => `statuses=${s}`).join('&');
+      const params = `page=0&size=100&sortBy=submittedAt&sortDirection=DESC&${statusFilter}`;
+
+      const res = await fetchWithAuth(`/api/applications/page?${params}`);
       if(!res.ok) throw new Error('加载失败');
-      const data = await res.json();
+      const pageData = await res.json();
+      const data = pageData.content || [];
+
       const inQueue = data.filter((a:any)=> ['SYSTEM_REVIEWING','SYSTEM_APPROVED','ADMIN_REVIEWING'].includes(a.status));
       const done = data.filter((a:any)=> ['APPROVED','REJECTED'].includes(a.status));
       setQueue(inQueue);

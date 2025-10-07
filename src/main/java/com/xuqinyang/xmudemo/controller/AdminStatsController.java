@@ -1,6 +1,5 @@
 package com.xuqinyang.xmudemo.controller;
 
-import com.xuqinyang.xmudemo.model.Application;
 import com.xuqinyang.xmudemo.model.ApplicationStatus;
 import com.xuqinyang.xmudemo.repository.ApplicationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,10 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -24,45 +20,51 @@ public class AdminStatsController {
 
     @GetMapping("/stats")
     public Map<String,Object> stats(){
-        List<Application> all = applicationRepository.findAll();
-        long total = all.size();
-        long systemReviewing = all.stream().filter(a-> a.getStatus()== ApplicationStatus.SYSTEM_REVIEWING).count();
-        long systemApproved = all.stream().filter(a-> a.getStatus()== ApplicationStatus.SYSTEM_APPROVED).count();
-        long systemRejected = all.stream().filter(a-> a.getStatus()== ApplicationStatus.SYSTEM_REJECTED).count();
-        long adminReviewing = all.stream().filter(a-> a.getStatus()== ApplicationStatus.ADMIN_REVIEWING).count();
-        long finalApproved = all.stream().filter(a-> a.getStatus()== ApplicationStatus.APPROVED).count();
-        long finalRejected = all.stream().filter(a-> a.getStatus()== ApplicationStatus.REJECTED).count();
-        // 简单平均审核时长(系统审核到最终状态) 仅做演示
-        List<Long> durations = all.stream()
-                .filter(a-> a.getAdminReviewedAt()!=null && a.getSystemReviewedAt()!=null)
-                .map(a-> Duration.between(a.getSystemReviewedAt(), a.getAdminReviewedAt()).toMinutes())
-                .collect(Collectors.toList());
-        double avgMinutes = durations.isEmpty()? 0: durations.stream().mapToLong(Long::longValue).average().orElse(0);
+        // 优化：使用数据库聚合查询，避免加载所有数据到内存
+        long total = applicationRepository.countAllApplications();
+
+        // 获取各状态的统计
+        List<Object[]> statusCounts = applicationRepository.countByStatusGrouped();
+        Map<ApplicationStatus, Long> statusMap = new HashMap<>();
+        for (Object[] row : statusCounts) {
+            ApplicationStatus status = (ApplicationStatus) row[0];
+            Long count = (Long) row[1];
+            statusMap.put(status, count);
+        }
+
+        // 获取平均审核时长
+        Double avgMinutes = applicationRepository.getAverageAdminReviewMinutes();
+
         return Map.of(
                 "totalApplications", total,
-                "pendingSystemReview", systemReviewing,
-                "systemApproved", systemApproved,
-                "systemRejected", systemRejected,
-                "pendingAdminReview", adminReviewing,
-                "finalApproved", finalApproved,
-                "finalRejected", finalRejected,
-                "averageAdminReviewMinutes", avgMinutes
+                "pendingSystemReview", statusMap.getOrDefault(ApplicationStatus.SYSTEM_REVIEWING, 0L),
+                "systemApproved", statusMap.getOrDefault(ApplicationStatus.SYSTEM_APPROVED, 0L),
+                "systemRejected", statusMap.getOrDefault(ApplicationStatus.SYSTEM_REJECTED, 0L),
+                "pendingAdminReview", statusMap.getOrDefault(ApplicationStatus.ADMIN_REVIEWING, 0L),
+                "finalApproved", statusMap.getOrDefault(ApplicationStatus.APPROVED, 0L),
+                "finalRejected", statusMap.getOrDefault(ApplicationStatus.REJECTED, 0L),
+                "averageAdminReviewMinutes", avgMinutes != null ? avgMinutes : 0.0
         );
     }
 
     @GetMapping("/department-stats")
     public List<Map<String,Object>> departmentStats(){
-        List<Application> all = applicationRepository.findAll();
-        Map<String, List<Application>> byDept = all.stream().collect(Collectors.groupingBy(a-> Optional.ofNullable(a.getActivity()).map(ac->ac.getDepartment()).orElse("未知")));
+        // 优化：使用数据库聚合查询
+        List<Object[]> deptStats = applicationRepository.getDepartmentStatistics();
         List<Map<String,Object>> list = new ArrayList<>();
-        byDept.forEach((dept, apps)->{
-            long approved = apps.stream().filter(a-> a.getStatus()== ApplicationStatus.APPROVED).count();
+
+        for (Object[] row : deptStats) {
+            String department = (String) row[0];
+            Long total = (Long) row[1];
+            Long approved = (Long) row[2];
+
             list.add(Map.of(
-                    "department", dept,
-                    "total", apps.size(),
+                    "department", department != null ? department : "未知",
+                    "total", total,
                     "approved", approved
             ));
-        });
+        }
+
         return list;
     }
 }

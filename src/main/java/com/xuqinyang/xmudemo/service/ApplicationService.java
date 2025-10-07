@@ -1376,4 +1376,66 @@ public class ApplicationService {
 
         return saved;
     }
+
+    /**
+     * 分页查询申请列表（支持搜索和状态过滤）
+     */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<Application> getApplicationsPage(
+            int page, int size, String sortBy, String sortDirection,
+            String searchKeyword, List<ApplicationStatus> statuses) {
+
+        // 构建分页参数
+        org.springframework.data.domain.Sort sort = sortDirection.equalsIgnoreCase("DESC")
+            ? org.springframework.data.domain.Sort.by(sortBy).descending()
+            : org.springframework.data.domain.Sort.by(sortBy).ascending();
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size, sort);
+
+        org.springframework.data.domain.Page<Application> applicationPage;
+
+        try {
+            // 根据参数选择合适的查询方法
+            if (searchKeyword != null && !searchKeyword.trim().isEmpty()) {
+                // 有搜索关键词
+                if (statuses != null && !statuses.isEmpty()) {
+                    // 搜索特定状态的申请
+                    applicationPage = applicationRepository.searchApplicationsByStatus(
+                        searchKeyword.trim(), statuses, pageable);
+                } else {
+                    // 搜索所有申请
+                    applicationPage = applicationRepository.searchApplications(searchKeyword.trim(), pageable);
+                }
+            } else {
+                // 无搜索关键词
+                if (statuses != null && !statuses.isEmpty()) {
+                    // 查询特定状态
+                    applicationPage = applicationRepository.findByStatusInWithUserAndActivity(statuses, pageable);
+                } else {
+                    // 查询所有
+                    applicationPage = applicationRepository.findAllWithUserAndActivity(pageable);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to use eager loading query, using fallback: " + e.getMessage());
+            // 降级处理：使用基础查询
+            applicationPage = applicationRepository.findAll(pageable);
+        }
+
+        // 初始化每个申请的懒加载关系
+        applicationPage.getContent().forEach(app -> {
+            try {
+                if (app.getUser() != null) {
+                    app.getUser().getStudentId(); // 触发初始化
+                }
+                if (app.getActivity() != null) {
+                    app.getActivity().getName(); // 触发初始化
+                }
+            } catch (Exception e) {
+                System.err.println("Warning: Failed to initialize relationships for application " +
+                    app.getId() + ": " + e.getMessage());
+            }
+        });
+
+        return applicationPage;
+    }
 }

@@ -90,24 +90,34 @@ public class SystemAutoReviewScheduler {
 
         String lockKey = "systemReview:process:" + application.getId();
 
-        return distributedLockService.executeWithLockAndRetry(lockKey, () -> {
-            // 重新查询申请状态（防止并发修改）
-            Application app = applicationRepository.findById(application.getId()).orElse(null);
-            if (app == null) {
-                log.warn("Application {} not found during processing", application.getId());
+        try {
+            // 使用默认重试策略（10次），移除硬编码的3次
+            return distributedLockService.executeWithLockAndRetry(lockKey, () -> {
+                // 重新查询申请状态（防止并发修改）
+                Application app = applicationRepository.findById(application.getId()).orElse(null);
+                if (app == null) {
+                    log.warn("Application {} not found during processing", application.getId());
+                    return false;
+                }
+
+                if (app.getStatus() != ApplicationStatus.SYSTEM_REVIEWING) {
+                    log.debug("Application {} status changed to {}, skipping", app.getId(), app.getStatus());
+                    return false;
+                }
+
+                // 执行自动审核 - 修改为跳转到人工审核
+                performAutoReview(app);
+                return true;
+            });
+        } catch (RuntimeException e) {
+            // 高并发时可能无法获取锁，这是正常的，不应该算作错误
+            if (e.getMessage() != null && e.getMessage().contains("Unable to acquire lock")) {
+                log.debug("Could not acquire lock for application {} due to high concurrency, will retry in next cycle", application.getId());
                 return false;
             }
-
-            if (app.getStatus() != ApplicationStatus.SYSTEM_REVIEWING) {
-                log.debug("Application {} status changed to {}, skipping", app.getId(), app.getStatus());
-                return false;
-            }
-
-            // 执行自动审核 - 修改为跳转到人工审核
-            performAutoReview(app);
-            return true;
-
-        }, 3);
+            // 其他异常继续抛出
+            throw e;
+        }
     }
 
     /**

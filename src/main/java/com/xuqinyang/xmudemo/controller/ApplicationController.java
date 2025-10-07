@@ -29,6 +29,8 @@ import jakarta.persistence.PersistenceContext;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -782,22 +784,30 @@ public class ApplicationController {
     @PreAuthorize("hasAnyAuthority('ADMIN','REVIEWER')")
     @GetMapping("/summary")
     public Map<String,Object> summary(){
-        var list = applicationService.getAllApplications();
-        long draft = list.stream().filter(a-> a.getStatus()==ApplicationStatus.DRAFT).count();
-        long sysRev = list.stream().filter(a-> a.getStatus()==ApplicationStatus.SYSTEM_REVIEWING).count();
-        long sysAppr = list.stream().filter(a-> a.getStatus()==ApplicationStatus.SYSTEM_APPROVED).count();
-        long sysRej = list.stream().filter(a-> a.getStatus()==ApplicationStatus.SYSTEM_REJECTED).count();
-        long admRev = list.stream().filter(a-> a.getStatus()==ApplicationStatus.ADMIN_REVIEWING).count();
-        long finalAppr = list.stream().filter(a-> a.getStatus()==ApplicationStatus.APPROVED).count();
-        long finalRej = list.stream().filter(a-> a.getStatus()==ApplicationStatus.REJECTED).count();
+        // 优化：使用数据库聚合查询，避免加载所有数据到内存
+        List<Object[]> statusCounts = applicationRepository.countByStatusGrouped();
+        Map<ApplicationStatus, Long> statusMap = new HashMap<>();
+
+        // 初始化所有状态为0
+        for (ApplicationStatus status : ApplicationStatus.values()) {
+            statusMap.put(status, 0L);
+        }
+
+        // 填充实际统计数据
+        for (Object[] row : statusCounts) {
+            ApplicationStatus status = (ApplicationStatus) row[0];
+            Long count = (Long) row[1];
+            statusMap.put(status, count);
+        }
+
         return Map.of(
-                "draft", draft,
-                "systemReviewing", sysRev,
-                "systemApproved", sysAppr,
-                "systemRejected", sysRej,
-                "adminReviewing", admRev,
-                "finalApproved", finalAppr,
-                "finalRejected", finalRej
+                "draft", statusMap.get(ApplicationStatus.DRAFT),
+                "systemReviewing", statusMap.get(ApplicationStatus.SYSTEM_REVIEWING),
+                "systemApproved", statusMap.get(ApplicationStatus.SYSTEM_APPROVED),
+                "systemRejected", statusMap.get(ApplicationStatus.SYSTEM_REJECTED),
+                "adminReviewing", statusMap.get(ApplicationStatus.ADMIN_REVIEWING),
+                "finalApproved", statusMap.get(ApplicationStatus.APPROVED),
+                "finalRejected", statusMap.get(ApplicationStatus.REJECTED)
         );
     }
 
@@ -813,6 +823,115 @@ public class ApplicationController {
     public ResponseEntity<?> reopen(@PathVariable Long id, @RequestBody(required = false) ReopenRequest body){
         try { return ResponseEntity.ok(applicationService.reopenAdminReview(id, body==null? null: body.reason())); }
         catch (Exception e){ return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
+    }
+
+    /**
+     * 分页查询申请列表（支持搜索和状态过滤）
+     */
+    @GetMapping("/page")
+    public ResponseEntity<?> getApplicationsPage(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "DESC") String sortDirection,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) List<String> statuses) {
+        try {
+            // 强制限制最大分页大小
+            size = Math.min(size, com.xuqinyang.xmudemo.dto.PageRequest.MAX_PAGE_SIZE);
+
+            // 转换状态参数
+            List<ApplicationStatus> statusList = null;
+            if (statuses != null && !statuses.isEmpty()) {
+                statusList = new ArrayList<>();
+                for (String s : statuses) {
+                    try {
+                        statusList.add(ApplicationStatus.valueOf(s));
+                    } catch (Exception e) {
+                        log.warn("Invalid status: {}", s);
+                    }
+                }
+            }
+
+            org.springframework.data.domain.Page<Application> appPage =
+                applicationService.getApplicationsPage(page, size, sortBy, sortDirection, search, statusList);
+
+            // 转换为前端需要的格式
+            List<Map<String, Object>> content = new ArrayList<>();
+            for (Application a : appPage.getContent()) {
+                var m = new java.util.HashMap<String, Object>();
+                m.put("id", a.getId());
+                m.put("status", a.getStatus() == null ? null : a.getStatus().name());
+                m.put("createdAt", a.getCreatedAt());
+                m.put("lastUpdateDate", a.getLastUpdateDate());
+                m.put("submittedAt", a.getSubmittedAt());
+                m.put("systemReviewedAt", a.getSystemReviewedAt());
+                m.put("adminReviewedAt", a.getAdminReviewedAt());
+                m.put("systemReviewComment", a.getSystemReviewComment());
+                m.put("adminReviewComment", a.getAdminReviewComment());
+                m.put("academicScore", a.getAcademicScore());
+                m.put("achievementScore", a.getAchievementScore());
+                m.put("performanceScore", a.getPerformanceScore());
+                m.put("totalScore", a.getTotalScore());
+                m.put("version", a.getVersion());
+
+                // Activity信息
+                Long actId = null;
+                String actName = null;
+                try {
+                    if (a.getActivity() != null) {
+                        actId = a.getActivity().getId();
+                        actName = a.getActivity().getName();
+                    }
+                } catch (Exception ignored) {}
+                if (actId == null) actId = a.getActivityId();
+                if (actName == null) actName = a.getActivityName();
+                m.put("activityId", actId);
+                m.put("activityName", actName);
+
+                // 用户信息
+                Long userId = null;
+                String userStudentId = null;
+                String userName = null;
+                try {
+                    if (a.getUser() != null) {
+                        userId = a.getUser().getId();
+                        userStudentId = a.getUser().getStudentId();
+                        userName = a.getUser().getName();
+                    }
+                } catch (Exception ignored) {}
+                if (userId == null) userId = a.getUserId();
+                if (userStudentId == null) userStudentId = a.getUserStudentId();
+                if (userName == null) userName = a.getUserName();
+                m.put("userId", userId);
+                m.put("userStudentId", userStudentId);
+                m.put("userName", userName);
+
+                m.put("content", a.getContent());
+                content.add(m);
+            }
+
+            // 构建分页响应
+            com.xuqinyang.xmudemo.dto.PageResponse<Map<String, Object>> response =
+                new com.xuqinyang.xmudemo.dto.PageResponse<>(
+                    content,
+                    appPage.getNumber(),
+                    appPage.getSize(),
+                    appPage.getTotalElements(),
+                    appPage.getTotalPages(),
+                    appPage.isFirst(),
+                    appPage.isLast(),
+                    appPage.isEmpty()
+                );
+
+            log.info("[APPLICATION][LIST_PAGE] page={} size={} total={} search={} statuses={}",
+                page, size, appPage.getTotalElements(), search, statuses);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("[APPLICATION][LIST_PAGE] error: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of("error", "查询失败: " + e.getMessage()));
+        }
     }
 
     // 记录类定义

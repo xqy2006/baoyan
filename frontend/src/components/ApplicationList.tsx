@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
@@ -9,6 +9,8 @@ import { Input } from './ui/input';
 import { exportApplicationsExcel } from './utils/exportExcel';
 import { toast } from 'sonner';
 import { ConfirmDialog, InputDialog } from './ui/confirm-dialog';
+import { SearchBox } from './SearchBox';
+import { Pagination } from './Pagination';
 
 interface ApplicationListProps {
   user: User;
@@ -34,9 +36,21 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
   const [reviewComments, setReviewComments] = useState<Record<string,string>>({});
   const [pendingCancelId, setPendingCancelId] = useState<string|null>(null);
   const [reopenDialogId, setReopenDialogId] = useState<string|null>(null);
+
+  // 分页和搜索状态
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalElements, setTotalElements] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+
   const isAdmin = user.role === 'ADMIN';
   const isReviewer = user.role === 'REVIEWER';
   const isStudent = user.role === 'STUDENT';
+
+  // 添加调试日志
+  console.log('[ApplicationList] 渲染 - page:', page, 'pageSize:', pageSize, 'searchKeyword:', searchKeyword, 'statusFilter:', statusFilter);
 
   const mapBackendApp = (a:any): Application => {
     const content = a.content? (()=>{try{return JSON.parse(a.content);}catch{return {};}})():{};
@@ -74,26 +88,150 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
     } as Application;
   };
 
-  const load = async () => {
-    setLoading(true); setError('');
-    try {
-      let url = '/api/applications';
-      if (isStudent) url = '/api/applications/mine';
-      else if (!isAdmin) url = '/api/applications/review-queue';
-      const res = await fetch(url, { credentials:'include' });
-      if (!res.ok) throw new Error('加载失败');
-      const data = await res.json();
-      const arr = Array.isArray(data)? data : [data];
-      setApplications(arr.map(mapBackendApp));
-    } catch (e:any) { setError(e.message || '获取申请失败'); }
-    finally { setLoading(false); }
-  };
-  useEffect(()=>{ load(); }, [user.role]);
+  // 使用 useEffect 直接处理加载逻辑
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true); setError('');
+      try {
+        let url = '';
+        let usePagination = false;
+
+        if (isStudent) {
+          // 学生查看自己的申请，不需要分页
+          url = '/api/applications/mine';
+        } else if (isAdmin || isReviewer) {
+          // 管理员和审核员使用分页API
+          url = '/api/applications/page';
+          usePagination = true;
+        }
+
+        if (usePagination) {
+          // 构建分页查询参数
+          const params = new URLSearchParams({
+            page: page.toString(),
+            size: pageSize.toString(),
+            sortBy: 'id',
+            sortDirection: 'DESC'
+          });
+
+          if (searchKeyword) {
+            params.append('search', searchKeyword);
+          }
+
+          if (statusFilter.length > 0) {
+            statusFilter.forEach(s => params.append('statuses', s));
+          }
+
+          url += '?' + params.toString();
+        }
+
+        const res = await fetch(url, { credentials:'include' });
+        if (!res.ok) throw new Error('加载失败');
+        const data = await res.json();
+
+        if (usePagination && data.content) {
+          // 分页响应
+          setApplications(data.content.map(mapBackendApp));
+          setTotalElements(data.totalElements || 0);
+          setTotalPages(data.totalPages || 0);
+        } else {
+          // 非分页响应
+          const arr = Array.isArray(data) ? data : [data];
+          setApplications(arr.map(mapBackendApp));
+          setTotalElements(arr.length);
+          setTotalPages(1);
+        }
+      } catch (e:any) {
+        setError(e.message || '获取申请失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+    // 注意：不依赖 isAdmin, isReviewer, isStudent，因为它们来自 user.role，不会在组件生命周期内改变
+  }, [page, pageSize, searchKeyword, statusFilter]);
+
+  // 保存 load 函数的引用供其他地方调用
+  const loadRef = useRef<() => Promise<void>>();
+  useEffect(() => {
+    loadRef.current = async () => {
+      setLoading(true); setError('');
+      try {
+        let url = '';
+        let usePagination = false;
+
+        if (isStudent) {
+          url = '/api/applications/mine';
+        } else if (isAdmin || isReviewer) {
+          url = '/api/applications/page';
+          usePagination = true;
+        }
+
+        if (usePagination) {
+          const params = new URLSearchParams({
+            page: page.toString(),
+            size: pageSize.toString(),
+            sortBy: 'id',
+            sortDirection: 'DESC'
+          });
+          if (searchKeyword) params.append('search', searchKeyword);
+          if (statusFilter.length > 0) statusFilter.forEach(s => params.append('statuses', s));
+          url += '?' + params.toString();
+        }
+
+        const res = await fetch(url, { credentials:'include' });
+        if (!res.ok) throw new Error('加载失败');
+        const data = await res.json();
+
+        if (usePagination && data.content) {
+          setApplications(data.content.map(mapBackendApp));
+          setTotalElements(data.totalElements || 0);
+          setTotalPages(data.totalPages || 0);
+        } else {
+          const arr = Array.isArray(data) ? data : [data];
+          setApplications(arr.map(mapBackendApp));
+          setTotalElements(arr.length);
+          setTotalPages(1);
+        }
+      } catch (e:any) {
+        setError(e.message || '获取申请失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+  });
+
+  const handleSearch = useCallback((keyword: string) => {
+    console.log('[ApplicationList] handleSearch 调用:', keyword);
+    setSearchKeyword(keyword);
+    setPage(0); // 搜索时重置到第一页
+  }, []);
+
+  const handlePageChange = useCallback((newPage: number) => {
+    console.log('[ApplicationList] handlePageChange 调用 - 从', page, '到', newPage);
+    setPage(newPage);
+  }, [page]);
+
+  const handlePageSizeChange = useCallback((newSize: number) => {
+    console.log('[ApplicationList] handlePageSizeChange 调用:', newSize);
+    setPageSize(newSize);
+    setPage(0); // 改变每页大小时重置到第一页
+  }, []);
+
+  const handleStatusFilterChange = useCallback((status: string) => {
+    setStatusFilter(prev =>
+      prev.includes(status)
+        ? prev.filter(s => s !== status)
+        : [...prev, status]
+    );
+    setPage(0); // 筛选时重置到第一页
+  }, []);
 
   const action = async (id:string, endpoint:string, body?:any) => {
     const res = await fetch(`/api/applications/${id}/${endpoint}`, { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/json' }, body: body? JSON.stringify(body): undefined });
     if (!res.ok) { const err= await res.json().catch(()=>({})); throw new Error(err.error||'操作失败'); }
-    await load();
+    if (loadRef.current) await loadRef.current();
   };
 
   const handleAdminStart = (id:string)=> action(id,'admin-start').catch(e=>toast.error(e.message));
@@ -122,7 +260,7 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
     switch (status) {
       case 'pending': return { color: 'secondary', icon: Clock, text: '待系统审核', className: '' };
       case 'system_reviewing': return { color: 'default', icon: AlertTriangle, text: '系统审核中', className: '' };
-      case 'system_approved': return { color: 'default', icon: Eye, text: '待人工审核', className: 'bg-blue-100 text-blue-800' };
+      case 'system_approved': return { color: 'default', icon: Eye, text: '待管理员审核', className: 'bg-blue-100 text-blue-800' };
       case 'system_rejected': return { color: 'destructive', icon: XCircle, text: '系统未通过', className: '' };
       case 'admin_reviewing': return { color: 'default', icon: Eye, text: '人工审核中', className: '' };
       case 'approved': return { color: 'default', icon: CheckCircle, text: '审核通过', className: 'bg-green-100 text-green-800' };
@@ -132,22 +270,80 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
     }
   };
 
+  const allStatuses = [
+    { key: 'SYSTEM_REVIEWING', label: '系统审核中', color: 'bg-blue-500 hover:bg-blue-600' },
+    { key: 'ADMIN_REVIEWING', label: '人工审核中', color: 'bg-blue-500 hover:bg-blue-600' },
+    { key: 'APPROVED', label: '已通过', color: 'bg-green-500 hover:bg-green-600' },
+    { key: 'REJECTED', label: '已拒绝', color: 'bg-red-500 hover:bg-red-600' }
+  ];
+
   return (
     <div className="w-full max-w-6xl mx-auto space-y-4 overflow-x-hidden p-3 sm:p-4 md:p-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div className="min-w-0 flex-1">
-          <h1 className="text-base sm:text-lg md:text-xl font-semibold break-words">{user.role === 'ADMIN' ? '推免申请审核' : (user.role==='STUDENT'? '我的推免申请':'审核队列')}</h1>
-          <p className="text-xs sm:text-sm text-gray-600 break-words">{user.role === 'ADMIN' ? '厦门大学信息学院推免申请管理' : '查看申请状态和详细信息'}</p>
+          <h1 className="text-base sm:text-lg md:text-xl font-semibold break-words">
+            {user.role === 'ADMIN' ? '推免申请审核' : (user.role==='STUDENT'? '我的推免申请':'审核队列')}
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-600 break-words">
+            {user.role === 'ADMIN' ? '厦门大学信息学院推免申请管理' : '查看申请状态和详细信息'}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs sm:text-sm text-gray-500 whitespace-nowrap">{loading? '加载中...' : `共 ${applications.length} 个申请`}</span>
-          {isAdmin && applications.length>0 && <Button size="sm" variant="outline" onClick={()=>exportApplicationsExcel(applications)}><span className="text-xs sm:text-sm">导出Excel</span></Button>}
+          <span className="text-xs sm:text-sm text-gray-500 whitespace-nowrap">
+            {loading ? '加载中...' : `共 ${totalElements} 个申请`}
+          </span>
+          {isAdmin && applications.length > 0 && (
+            <Button size="sm" variant="outline" onClick={() => exportApplicationsExcel(applications)}>
+              <span className="text-xs sm:text-sm">导出Excel</span>
+            </Button>
+          )}
         </div>
       </div>
-      {isAdmin && applications.length>0 && (
-        <div className="text-xs text-gray-500 pb-1">显示列：学业综合(0-80) / 学术专长(0-15) / 综合表现(0-5) / 总成绩(0-100)</div>
+
+      {/* 搜索和筛选 - 仅管理员和审核员可见 */}
+      {(isAdmin || isReviewer) && (
+        <div className="flex flex-col gap-4">
+          <SearchBox
+            placeholder="搜索学号、姓名或活动..."
+            onSearch={handleSearch}
+            defaultValue={searchKeyword}
+          />
+
+          {/* 状态筛选 */}
+          <div className="flex flex-wrap gap-2">
+            <span className="text-sm text-gray-600 self-center">筛选状态:</span>
+            {allStatuses.map(status => (
+              <Button
+                key={status.key}
+                variant={statusFilter.includes(status.key) ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => handleStatusFilterChange(status.key)}
+                className={statusFilter.includes(status.key) ? `${status.color} text-white` : ''}
+              >
+                {status.label}
+              </Button>
+            ))}
+            {statusFilter.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStatusFilter([])}
+              >
+                清除筛选
+              </Button>
+            )}
+          </div>
+        </div>
       )}
+
+      {isAdmin && applications.length > 0 && (
+        <div className="text-xs text-gray-500 pb-1">
+          显示列：学业综合(0-80) / 学术专长(0-15) / 综合表现(0-5) / 总成绩(0-100)
+        </div>
+      )}
+
       {error && <div className="text-sm text-red-600">{error}</div>}
+
       <div className="space-y-3 sm:space-y-4">
         {applications.map(application => {
           const statusInfo = getStatusInfo(application.status);
@@ -227,8 +423,25 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
             </Card>
           );
         })}
-        {!loading && applications.length===0 && <div className="text-sm text-gray-500">暂无申请</div>}
+        {!loading && applications.length === 0 && (
+          <div className="text-sm text-gray-500">
+            {searchKeyword || statusFilter.length > 0 ? '没有找到匹配的申请' : '暂无申请'}
+          </div>
+        )}
       </div>
+
+      {/* 分页控件 - 仅管理员和审核员可见 */}
+      {(isAdmin || isReviewer) && totalPages > 0 && (
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalElements={totalElements}
+          onPageChange={handlePageChange}
+          onPageSizeChange={handlePageSizeChange}
+        />
+      )}
+
       <ConfirmDialog open={!!pendingCancelId} onOpenChange={o=>{ if(!o) setPendingCancelId(null); }} title="确认取消申请" description={<div>取消后该记录状态将变为“已取消”，可重新发起新的申请草稿。<br/>确定继续？</div>} confirmText="确认取消" destructive onConfirm={confirmCancel} />
       <InputDialog open={!!reopenDialogId} onOpenChange={o=>{ if(!o) setReopenDialogId(null); }} title="重新审核" placeholder="复核理由(可选)" confirmText="发起复核" onConfirm={(val)=> reopenDialogId && submitReopen(reopenDialogId, val)} />
     </div>

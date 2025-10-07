@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -13,6 +13,8 @@ import { StudentBasicInfo } from '../App';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
 import { toast } from 'sonner';
 import { ConfirmDialog, InputDialog } from './ui/confirm-dialog';
+import { SearchBox } from './SearchBox';
+import { Pagination } from './Pagination';
 
 interface ImportResult {
   success: number;
@@ -49,6 +51,15 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
   // 用户管理相关状态
   const [userList, setUserList] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+
+  // 分页和搜索状态
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalElements, setTotalElements] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [searchKeyword, setSearchKeyword] = useState('');
+
+  // 创建用户表单状态
   const [createForm, setCreateForm] = useState<{
     studentId: string;
     password: string;
@@ -260,16 +271,55 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
   const loadUsers = async () => {
     setLoadingUsers(true);
     try {
-      const res = await fetch('/api/users', { credentials:'include' });
+      // 构建分页查询参数
+      const params = new URLSearchParams({
+        page: page.toString(),
+        size: pageSize.toString(),
+        sortBy: 'id',
+        sortDirection: 'ASC'
+      });
+
+      if (searchKeyword) {
+        params.append('search', searchKeyword);
+      }
+
+      const res = await fetch(`/api/users/page?${params.toString()}`, { credentials:'include' });
       if (res.ok) {
         const data = await res.json();
-        setUserList(data);
+        // 分页API返回的是PageResponse，需要提取content
+        setUserList(data.content || []);
+        setTotalElements(data.totalElements || 0);
+        setTotalPages(data.totalPages || 0);
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      console.error('加载用户失败:', e);
+    }
     setLoadingUsers(false);
   };
 
-  React.useEffect(() => { loadUsers(); }, []);
+  React.useEffect(() => {
+    if (activeTab === 'current') {
+      loadUsers();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, page, pageSize, searchKeyword]);
+
+  const handleSearch = useCallback((keyword: string) => {
+    console.log('[DataImport] handleSearch 调用:', keyword);
+    setSearchKeyword(keyword);
+    setPage(0); // 搜索时重置到第一页
+  }, []);
+
+  const handlePageChange = useCallback((newPage: number) => {
+    console.log('[DataImport] handlePageChange 调用 - 从', page, '到', newPage);
+    setPage(newPage);
+  }, [page]);
+
+  const handlePageSizeChange = useCallback((newSize: number) => {
+    console.log('[DataImport] handlePageSizeChange 调用:', newSize);
+    setPageSize(newSize);
+    setPage(0); // 改变每页大小时重置到第一页
+  }, []);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -660,16 +710,32 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
           <Card>
             <CardHeader>
               <CardTitle>当前用户列表</CardTitle>
-              <CardDescription>系统中已有用户（{userList.length} 条）</CardDescription>
+              <CardDescription>系统中已有用户（共 {totalElements} 条）</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex justify-between mb-2">
-                <div className="space-x-2">
-                  <Button variant="outline" size="sm" onClick={loadUsers} disabled={loadingUsers}>{loadingUsers? '刷新中...' : '刷新'}</Button>
-                  <Button variant="outline" size="sm" onClick={exportUsers} disabled={exporting}>{exporting? '导出中...' : '导出CSV'}</Button>
+              <div className="flex flex-col gap-4 mb-4">
+                {/* 搜索框 */}
+                <div className="flex justify-between items-center gap-2">
+                  <SearchBox
+                    placeholder="搜索学号、姓名、学院或专业..."
+                    onSearch={handleSearch}
+                    defaultValue={searchKeyword}
+                  />
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={loadUsers} disabled={loadingUsers}>
+                      <RefreshCw className={`h-4 w-4 mr-1 ${loadingUsers ? 'animate-spin' : ''}`} />
+                      {loadingUsers ? '刷新中...' : '刷新'}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={exportUsers} disabled={exporting}>
+                      <FileDown className="h-4 w-4 mr-1" />
+                      {exporting ? '导出中...' : '导出CSV'}
+                    </Button>
+                  </div>
                 </div>
+
                 {deleteMsg && <span className="text-sm text-gray-600">{deleteMsg}</span>}
               </div>
+
               <div className="border rounded-lg max-h-[480px] overflow-auto">
                 <Table>
                   <TableHeader>
@@ -720,11 +786,29 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
                       );
                     })}
                     {userList.length===0 && !loadingUsers && (
-                      <TableRow><TableCell colSpan={10} className="text-center text-sm text-gray-500">暂无用户</TableCell></TableRow>
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center text-sm text-gray-500">
+                          {searchKeyword ? '没有找到匹配的用户' : '暂无用户'}
+                        </TableCell>
+                      </TableRow>
                     )}
                   </TableBody>
                 </Table>
               </div>
+
+              {/* 分页控件 */}
+              {totalPages > 0 && (
+                <div className="mt-4">
+                  <Pagination
+                    currentPage={page}
+                    totalPages={totalPages}
+                    pageSize={pageSize}
+                    totalElements={totalElements}
+                    onPageChange={handlePageChange}
+                    onPageSizeChange={handlePageSizeChange}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

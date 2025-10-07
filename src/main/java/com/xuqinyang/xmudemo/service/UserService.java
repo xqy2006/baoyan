@@ -577,4 +577,41 @@ public class UserService {
     private boolean isBlank(String str) {
         return str == null || str.trim().isEmpty();
     }
+
+    /**
+     * 分页查询用户列表（支持搜索和缓存）
+     */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<User> getUsersPage(int page, int size, String sortBy, String sortDirection, String searchKeyword) {
+        // 构建分页参数
+        org.springframework.data.domain.Sort sort = sortDirection.equalsIgnoreCase("DESC")
+            ? org.springframework.data.domain.Sort.by(sortBy).descending()
+            : org.springframework.data.domain.Sort.by(sortBy).ascending();
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size, sort);
+
+        org.springframework.data.domain.Page<User> userPage;
+
+        // 如果有搜索关键词，执行搜索查询
+        if (searchKeyword != null && !searchKeyword.trim().isEmpty()) {
+            userPage = userRepository.searchUsers(searchKeyword.trim(), pageable);
+        } else {
+            userPage = userRepository.findAll(pageable);
+        }
+
+        // 初始化每个用户的懒加载关系
+        userPage.getContent().forEach(u -> {
+            try {
+                if (u.getRoles() != null) {
+                    u.getRoles().size();
+                    u.setRoles(new java.util.HashSet<>(u.getRoles()));
+                } else {
+                    u.setRoles(new java.util.HashSet<>());
+                }
+            } catch (Exception e) {
+                u.setRoles(new java.util.HashSet<>());
+            }
+        });
+
+        return userPage;
+    }
 }

@@ -5,6 +5,8 @@ import com.xuqinyang.xmudemo.model.ApplicationStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Optional;
@@ -41,4 +43,49 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
     // 新增：查找某用户的所有申请并预加载 activity（避免懒加载问题在序列化时发生）
     @Query("SELECT a FROM Application a LEFT JOIN FETCH a.activity WHERE a.user.id = :userId")
     List<Application> findByUser_IdWithActivity(@Param("userId") Long userId);
+
+    // 分页查询所有申请并预加载关联
+    @Query("SELECT a FROM Application a JOIN FETCH a.user u JOIN FETCH a.activity ac")
+    Page<Application> findAllWithUserAndActivity(Pageable pageable);
+
+    // 根据状态分页查询
+    @Query("SELECT a FROM Application a JOIN FETCH a.user u JOIN FETCH a.activity ac WHERE a.status IN :statuses")
+    Page<Application> findByStatusInWithUserAndActivity(@Param("statuses") List<ApplicationStatus> statuses, Pageable pageable);
+
+    // 搜索申请（根据学号、姓名、活动名称）
+    @Query("SELECT a FROM Application a JOIN FETCH a.user u JOIN FETCH a.activity ac WHERE " +
+           "LOWER(u.studentId) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "LOWER(u.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "LOWER(ac.name) LIKE LOWER(CONCAT('%', :keyword, '%'))")
+    Page<Application> searchApplications(@Param("keyword") String keyword, Pageable pageable);
+
+    // 搜索特定状态的申请
+    @Query("SELECT a FROM Application a JOIN FETCH a.user u JOIN FETCH a.activity ac WHERE " +
+           "a.status IN :statuses AND (" +
+           "LOWER(u.studentId) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "LOWER(u.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "LOWER(ac.name) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+    Page<Application> searchApplicationsByStatus(@Param("keyword") String keyword,
+                                                   @Param("statuses") List<ApplicationStatus> statuses,
+                                                   Pageable pageable);
+
+    // 统计查询 - 避免加载所有数据到内存
+    @Query("SELECT COUNT(a) FROM Application a")
+    long countAllApplications();
+
+    @Query("SELECT a.status as status, COUNT(a) as count FROM Application a GROUP BY a.status")
+    List<Object[]> countByStatusGrouped();
+
+    @Query(value = "SELECT AVG(TIMESTAMPDIFF(MINUTE, system_reviewed_at, admin_reviewed_at)) " +
+           "FROM application WHERE admin_reviewed_at IS NOT NULL AND system_reviewed_at IS NOT NULL",
+           nativeQuery = true)
+    Double getAverageAdminReviewMinutes();
+
+    @Query("SELECT ac.department as department, COUNT(a) as total, " +
+           "SUM(CASE WHEN a.status = 'APPROVED' THEN 1 ELSE 0 END) as approved " +
+           "FROM Application a JOIN a.activity ac GROUP BY ac.department")
+    List<Object[]> getDepartmentStatistics();
+
+    @Query(value = "SELECT COUNT(*) FROM application WHERE DATE(submitted_at) = CURDATE()", nativeQuery = true)
+    long countTodayApplications();
 }

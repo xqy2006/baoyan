@@ -17,14 +17,17 @@ export const AdminDashboard: React.FC = () => {
     Promise.all([
       fetch('/api/admin/stats',{credentials:'include'}),
       fetch('/api/admin/department-stats',{credentials:'include'}),
-      fetch('/api/applications/review-queue',{credentials:'include'})
+      // 优化：使用分页接口，只加载待审核的申请
+      fetch('/api/applications/page?page=0&size=100&sortBy=submittedAt&sortDirection=DESC&statuses=SYSTEM_REVIEWING&statuses=SYSTEM_APPROVED&statuses=ADMIN_REVIEWING',{credentials:'include'})
     ]).then(async ([s,d,q])=>{
       if(!s.ok) throw new Error('统计接口失败');
       if(!d.ok) throw new Error('系别统计失败');
       if(!q.ok) throw new Error('审核队列获取失败');
       const sv = await s.json();
       const dv = await d.json();
-      const qv = await q.json();
+      const qData = await q.json();
+      const qv = qData.content || []; // 从分页响应中获取content
+
       setStats(sv); setDeptStats(dv);
       // 仅展示 system_approved / ADMIN_REVIEWING / SYSTEM_REVIEWING
       const mapStatus=(st:string)=>{

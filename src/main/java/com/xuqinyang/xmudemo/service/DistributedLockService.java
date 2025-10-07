@@ -22,8 +22,8 @@ public class DistributedLockService {
     private final RedisTemplate<String, Object> redisTemplate;
 
     private static final String LOCK_PREFIX = "lock:";
-    private static final long DEFAULT_EXPIRE_TIME = 30; // 增加到30秒过期时间
-    private static final long WATCH_DOG_INTERVAL = 10; // watch-dog续租间隔10秒
+    private static final long DEFAULT_EXPIRE_TIME = 60; // 增加到60秒过期时间，应对高并发
+    private static final long WATCH_DOG_INTERVAL = 15; // watch-dog续租间隔15秒
 
     // 用于存储锁信息，支持watch-dog
     private final Map<String, LockInfo> activeLocks = new ConcurrentHashMap<>();
@@ -42,10 +42,10 @@ public class DistributedLockService {
         "    return 0 " +
         "end";
 
-    // Lua脚本：原子性续租锁
+    // Lua脚本：原子性续租锁 - 修复整数转换问题
     private static final String RENEW_SCRIPT =
         "if redis.call('get', KEYS[1]) == ARGV[1] then " +
-        "    return redis.call('expire', KEYS[1], ARGV[2]) " +
+        "    return redis.call('expire', KEYS[1], tonumber(ARGV[2])) " +
         "else " +
         "    return 0 " +
         "end";
@@ -125,42 +125,61 @@ public class DistributedLockService {
     }
 
     /**
-     * 启动watch-dog定时续租
+     * 启动watch-dog定时续租 - 改进错误处理
      */
     private void startWatchDog(LockInfo lockInfo) {
         long intervalSeconds = Math.min(WATCH_DOG_INTERVAL, lockInfo.timeUnit.toSeconds(lockInfo.expireTime) / 3);
 
         lockInfo.watchDogTask = watchDogExecutor.scheduleAtFixedRate(() -> {
             try {
+                // 检查锁是否仍在活跃映射中
+                if (!activeLocks.containsKey(lockInfo.lockKey)) {
+                    log.debug("Lock no longer active, stopping watch-dog: {}", lockInfo.lockKey);
+                    if (lockInfo.watchDogTask != null) {
+                        lockInfo.watchDogTask.cancel(false);
+                    }
+                    return;
+                }
+
                 if (renewLock(lockInfo)) {
                     log.debug("Watch-dog renewed lock: {}", lockInfo.lockKey);
                 } else {
                     log.warn("Watch-dog failed to renew lock: {}, removing from active locks", lockInfo.lockKey);
                     activeLocks.remove(lockInfo.lockKey);
                     if (lockInfo.watchDogTask != null) {
-                        lockInfo.watchDogTask.cancel(true);
+                        lockInfo.watchDogTask.cancel(false);
                     }
                 }
             } catch (Exception e) {
                 log.error("Watch-dog error for lock: {}", lockInfo.lockKey, e);
+                // 出错时也移除锁，避免泄漏
+                activeLocks.remove(lockInfo.lockKey);
+                if (lockInfo.watchDogTask != null) {
+                    lockInfo.watchDogTask.cancel(false);
+                }
             }
         }, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
     }
 
     /**
-     * 续租锁
+     * 续租锁 - 改进错误处理
      */
     private boolean renewLock(LockInfo lockInfo) {
-        DefaultRedisScript<Long> script = new DefaultRedisScript<>(RENEW_SCRIPT, Long.class);
-        Long result = redisTemplate.execute(script,
-            Collections.singletonList(lockInfo.lockKey),
-            lockInfo.lockValue,
-            String.valueOf(lockInfo.timeUnit.toSeconds(lockInfo.expireTime)));
-        return result != null && result == 1;
+        try {
+            DefaultRedisScript<Long> script = new DefaultRedisScript<>(RENEW_SCRIPT, Long.class);
+            Long result = redisTemplate.execute(script,
+                Collections.singletonList(lockInfo.lockKey),
+                lockInfo.lockValue,
+                lockInfo.timeUnit.toSeconds(lockInfo.expireTime)); // 直接传递Long类型，避免序列化问题
+            return result != null && result == 1;
+        } catch (Exception e) {
+            log.error("Failed to renew lock: {}", lockInfo.lockKey, e);
+            return false;
+        }
     }
 
     /**
-     * 释放分布式锁（支持重入锁）
+     * 释放分布式锁（支持重入锁） - 改进线程安全
      */
     public void unlock(String key) {
         String lockKey = LOCK_PREFIX + key;
@@ -194,29 +213,43 @@ public class DistributedLockService {
 
             // 停止watch-dog
             if (lockInfo.watchDogTask != null) {
-                lockInfo.watchDogTask.cancel(true);
+                lockInfo.watchDogTask.cancel(false);
             }
 
             // 原子性释放锁
-            DefaultRedisScript<Long> script = new DefaultRedisScript<>(UNLOCK_SCRIPT, Long.class);
-            Long result = redisTemplate.execute(script,
-                Collections.singletonList(lockKey),
-                lockInfo.lockValue);
+            try {
+                DefaultRedisScript<Long> script = new DefaultRedisScript<>(UNLOCK_SCRIPT, Long.class);
+                Long result = redisTemplate.execute(script,
+                    Collections.singletonList(lockKey),
+                    lockInfo.lockValue);
 
-            if (result != null && result == 1) {
-                log.debug("Released distributed lock: {}", lockKey);
-            } else {
-                log.warn("Failed to release lock or lock was already expired: {}", lockKey);
+                if (result != null && result == 1) {
+                    log.debug("Released distributed lock: {}", lockKey);
+                } else {
+                    log.warn("Failed to release lock or lock was already expired: {}", lockKey);
+                }
+            } catch (Exception e) {
+                log.error("Error releasing lock: {}", lockKey, e);
+                // 即使失败也尝试直接删除
+                try {
+                    redisTemplate.delete(lockKey);
+                } catch (Exception ex) {
+                    log.error("Failed to delete lock key: {}", lockKey, ex);
+                }
             }
         } else {
             // 简单删除
-            redisTemplate.delete(lockKey);
-            log.debug("Released distributed lock (no watch-dog): {}", lockKey);
+            try {
+                redisTemplate.delete(lockKey);
+                log.debug("Released distributed lock (no watch-dog): {}", lockKey);
+            } catch (Exception e) {
+                log.error("Error deleting lock: {}", lockKey, e);
+            }
         }
     }
 
     /**
-     * 带锁执行操作（支持乐观锁重试）
+     * 带锁执行操作（支持乐观锁重试） - 改进重试策略
      */
     public <T> T executeWithLock(String key, long expireTime, TimeUnit timeUnit, LockCallback<T> callback, int maxRetries) {
         int attempts = 0;
@@ -267,9 +300,9 @@ public class DistributedLockService {
                     log.debug("Failed to acquire lock: {} (attempt {}/{})", key, attempts, maxRetries);
 
                     if (attempts < maxRetries) {
-                        // 指数退避 + 随机抖动，减少锁竞争
-                        long baseDelay = Math.min(1000, 100 * (1L << (attempts - 1))); // 指数退避，最大1秒
-                        long jitter = (long)(Math.random() * 100); // 随机抖动
+                        // 改进的退避策略：更短的初始延迟，更快的重试
+                        long baseDelay = Math.min(500, 50 * attempts); // 线性增长，最大500ms
+                        long jitter = (long)(Math.random() * 50); // 随机抖动
                         long delay = baseDelay + jitter;
 
                         log.debug("Retrying lock acquisition for: {}, delay: {}ms", key, delay);
@@ -317,10 +350,10 @@ public class DistributedLockService {
     }
 
     /**
-     * 带锁执行操作并重试（默认重试5次，适用于高并发场景）
+     * 带锁执行操作并重试（默认重试10次，适用于高并发场景）
      */
     public <T> T executeWithLockAndRetry(String key, LockCallback<T> callback) {
-        return executeWithLockAndRetry(key, callback, 5);
+        return executeWithLockAndRetry(key, callback, 10); // 增加到10次重试
     }
 
     /**

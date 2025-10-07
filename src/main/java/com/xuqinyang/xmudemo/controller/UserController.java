@@ -115,6 +115,64 @@ public class UserController {
         return ResponseEntity.ok(list);
     }
 
+    /**
+     * 分页查询用户列表（支持搜索）
+     */
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @GetMapping("/page")
+    public ResponseEntity<?> listUsersPage(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "ASC") String sortDirection,
+            @RequestParam(required = false) String search) {
+        try {
+            // 强制限制最大分页大小
+            size = Math.min(size, com.xuqinyang.xmudemo.dto.PageRequest.MAX_PAGE_SIZE);
+
+            org.springframework.data.domain.Page<User> userPage = userService.getUsersPage(
+                page, size, sortBy, sortDirection, search);
+
+            // 转换为前端需要的格式
+            List<Map<String, Object>> content = new ArrayList<>();
+            for (User u : userPage.getContent()) {
+                Map<String, Object> m = new HashMap<>();
+                m.put("studentId", u.getStudentId());
+                m.put("name", u.getName());
+                m.put("department", u.getDepartment());
+                m.put("major", u.getMajor());
+                m.put("gpa", u.getGpa());
+                m.put("academicRank", u.getAcademicRank());
+                m.put("majorTotal", u.getMajorTotal());
+                m.put("convertedScore", u.getConvertedScore());
+                m.put("roles", u.getRoles());
+                m.put("role", u.getRoles().stream().findFirst().orElse(null));
+                content.add(m);
+            }
+
+            // 构建分页响应
+            com.xuqinyang.xmudemo.dto.PageResponse<Map<String, Object>> response =
+                new com.xuqinyang.xmudemo.dto.PageResponse<>(
+                    content,
+                    userPage.getNumber(),
+                    userPage.getSize(),
+                    userPage.getTotalElements(),
+                    userPage.getTotalPages(),
+                    userPage.isFirst(),
+                    userPage.isLast(),
+                    userPage.isEmpty()
+                );
+
+            log.info("[USER][LIST_PAGE] page={} size={} total={} search={}",
+                page, size, userPage.getTotalElements(), search);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("[USER][LIST_PAGE] error: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of("error", "查询失败: " + e.getMessage()));
+        }
+    }
+
     @PreAuthorize("hasAuthority('ADMIN')")
     @PostMapping("")
     @CacheEvict(value = "users", allEntries = true)
@@ -382,3 +440,4 @@ public class UserController {
         return ResponseEntity.ok(list);
     }
 }
+

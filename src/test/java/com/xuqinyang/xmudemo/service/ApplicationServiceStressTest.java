@@ -272,7 +272,7 @@ class ApplicationServiceStressTest {
                     Application application = new Application();
                     application.setUser(user);
                     application.setActivity(testActivity);
-                    application.setStatus(ApplicationStatus.DRAFT);
+                    application.setStatus(ApplicationStatus.SYSTEM_REVIEWING);
                     application.setContent("{\"reason\": \"压力测试申请 " + requestId + "\"}");
 
                     Application saved = applicationService.createApplication(application);
@@ -467,7 +467,7 @@ class ApplicationServiceStressTest {
             Application app = new Application();
             app.setUser(user);
             app.setActivity(testActivity);
-            app.setStatus(ApplicationStatus.DRAFT);
+            app.setStatus(ApplicationStatus.SYSTEM_REVIEWING);
             app.setContent("{\"reason\": \"查询测试数据 " + i + "\"}");
             applicationRepository.save(app);
         }
