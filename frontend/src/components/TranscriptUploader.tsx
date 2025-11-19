@@ -50,9 +50,36 @@ export const TranscriptUploader: React.FC<Props> = ({ onFile, existing, disabled
     onFile(null); // 直接置空
   };
 
+  const fileRowStyle: React.CSSProperties = {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: '#e5e7eb',
+    borderRadius: 6,
+    padding: '8px 12px',
+    backgroundColor: '#f9fafb',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4
+  };
+
+  const fileInfoRow: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 0
+  };
+
+  const actionsRow: React.CSSProperties = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'flex-end'
+  };
+
   return (
-    <div className="space-y-2">
-      <div className={`border rounded-md p-4 flex items-start gap-4 ${disabled? 'bg-gray-50 opacity-70 cursor-not-allowed':'bg-white'}`}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ borderWidth: 1, borderStyle: 'solid', borderColor: '#e5e7eb', borderRadius: 6, padding: 16, backgroundColor: disabled ? '#f9fafb' : '#ffffff', opacity: disabled ? 0.7 : 1 }}>
         <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Upload className="w-4 h-4 text-gray-500" />
@@ -70,13 +97,49 @@ export const TranscriptUploader: React.FC<Props> = ({ onFile, existing, disabled
             </div>
           )}
           { (existing?.id || existing?.isLocal) && !uploading && (
-            <div className="flex items-center justify-between text-sm border rounded px-3 py-2 bg-gray-50">
-              <div className="flex items-center gap-2 truncate">
-                <FileText className="w-4 h-4 text-gray-500" />
-                <span className="truncate max-w-[180px]" title={existing.name}>{existing.name || '已选择'}</span>
-                {existing.isLocal && <span className="text-[10px] text-orange-600 border border-orange-300 px-1 rounded">本地</span>}
+            <div style={fileRowStyle}>
+              <div style={fileInfoRow}>
+                <FileText style={{ width: 16, height: 16, color: '#6b7280', flexShrink: 0 }} />
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: '#374151',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: '70vw'
+                  }}
+                  title={existing.name}
+                >
+                  {existing.name || '已选择'}
+                </span>
+                {existing.isLocal && (
+                  <span style={{ fontSize: 10, color: '#c2410c', border: '1px solid #fed7aa', padding: '0 4px', borderRadius: 4, flexShrink: 0 }}>
+                    本地
+                  </span>
+                )}
               </div>
-              {!disabled && <button type="button" onClick={remove} className="text-gray-400 hover:text-red-600" title="移除"><XCircle className="w-4 h-4" /></button>}
+              {!disabled && (
+                <div style={actionsRow}>
+                  <button
+                    type="button"
+                    onClick={remove}
+                    title="移除"
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      fontSize: 12,
+                      color: '#9ca3af',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <XCircle style={{ width: 16, height: 16, marginRight: 4 }} />
+                    移除
+                  </button>
+                </div>
+              )}
             </div>
           )}
           {error && <div className="text-xs text-red-600">{error}</div>}

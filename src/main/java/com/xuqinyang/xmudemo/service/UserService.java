@@ -512,6 +512,7 @@ public class UserService {
                 } else {
                     user = new User();
                     user.setStudentId(studentId);
+                    // 修复：确保所有用户（包括审核员）都有姓名，如果Excel中没有提供姓名则使用学号作为后备
                     user.setName(isBlank(name) ? studentId : name);
                     user.setDepartment(department);
                     user.setMajor(major);

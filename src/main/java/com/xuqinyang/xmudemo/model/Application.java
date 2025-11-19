@@ -39,6 +39,33 @@ public class Application {
     @Column(length = 1000)
     private String adminReviewComment;
 
+    // 双审核员制度：第一审核员和第二审核员
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "first_reviewer_id")
+    @JsonIgnore
+    private User firstReviewer;
+
+    @Column(length = 100)
+    private String firstReviewerName; // 冗余字段，避免懒加载问题
+
+    private LocalDateTime firstReviewedAt;
+
+    @Column(length = 1000)
+    private String firstReviewComment;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "second_reviewer_id")
+    @JsonIgnore
+    private User secondReviewer;
+
+    @Column(length = 100)
+    private String secondReviewerName; // 冗余字段，避免懒加载问题
+
+    private LocalDateTime secondReviewedAt;
+
+    @Column(length = 1000)
+    private String secondReviewComment;
+
     // Scoring fields (simple placeholders)
     private Double academicScore;
     private Double achievementScore;
@@ -78,6 +105,27 @@ public class Application {
     public void setSystemReviewComment(String systemReviewComment) { this.systemReviewComment = systemReviewComment; }
     public String getAdminReviewComment() { return adminReviewComment; }
     public void setAdminReviewComment(String adminReviewComment) { this.adminReviewComment = adminReviewComment; }
+
+    // First reviewer getters/setters
+    public User getFirstReviewer() { return firstReviewer; }
+    public void setFirstReviewer(User firstReviewer) { this.firstReviewer = firstReviewer; }
+    public String getFirstReviewerName() { return firstReviewerName; }
+    public void setFirstReviewerName(String firstReviewerName) { this.firstReviewerName = firstReviewerName; }
+    public LocalDateTime getFirstReviewedAt() { return firstReviewedAt; }
+    public void setFirstReviewedAt(LocalDateTime firstReviewedAt) { this.firstReviewedAt = firstReviewedAt; }
+    public String getFirstReviewComment() { return firstReviewComment; }
+    public void setFirstReviewComment(String firstReviewComment) { this.firstReviewComment = firstReviewComment; }
+
+    // Second reviewer getters/setters
+    public User getSecondReviewer() { return secondReviewer; }
+    public void setSecondReviewer(User secondReviewer) { this.secondReviewer = secondReviewer; }
+    public String getSecondReviewerName() { return secondReviewerName; }
+    public void setSecondReviewerName(String secondReviewerName) { this.secondReviewerName = secondReviewerName; }
+    public LocalDateTime getSecondReviewedAt() { return secondReviewedAt; }
+    public void setSecondReviewedAt(LocalDateTime secondReviewedAt) { this.secondReviewedAt = secondReviewedAt; }
+    public String getSecondReviewComment() { return secondReviewComment; }
+    public void setSecondReviewComment(String secondReviewComment) { this.secondReviewComment = secondReviewComment; }
+
     public Double getAcademicScore() { return academicScore; }
     public void setAcademicScore(Double academicScore) { this.academicScore = academicScore; }
     public Double getAchievementScore() { return achievementScore; }
@@ -111,4 +159,13 @@ public class Application {
     public Long getActivityId() {
         return activity != null ? activity.getId() : null;
     }
+
+    public Long getFirstReviewerId() {
+        return firstReviewer != null ? firstReviewer.getId() : null;
+    }
+
+    public Long getSecondReviewerId() {
+        return secondReviewer != null ? secondReviewer.getId() : null;
+    }
 }
+

@@ -329,8 +329,13 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
       setCreateError('学号/密码/角色必填');
       return;
     }
-    if (createForm.role === 'STUDENT' && (!createForm.name || !createForm.department || !createForm.major)) {
-      setCreateError('学生需填写姓名/学院/专业');
+    // 修复：所有角色都需要姓名
+    if (!createForm.name) {
+      setCreateError('姓名必填');
+      return;
+    }
+    if (createForm.role === 'STUDENT' && (!createForm.department || !createForm.major)) {
+      setCreateError('学生需填写学院/专业');
       return;
     }
     try {
@@ -576,7 +581,7 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* 统计概览 */}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="text-center p-4 bg-green-50 rounded-lg">
                     <CheckCircle className="h-8 w-8 text-green-600 mx-auto mb-2" />
                     <p className="text-2xl font-semibold text-green-600">{importResult.success}</p>
@@ -665,12 +670,13 @@ export const DataImport: React.FC<{ role: string }> = ({ role }) => {
                       <option value="ADMIN">ADMIN</option>
                     </select>
                   </div>
+                  {/* 姓名对所有角色都是必填 */}
+                  <div>
+                    <Label>姓名 <span className="text-red-500">*</span></Label>
+                    <Input value={createForm.name} onChange={e=>setCreateForm(f=>({...f,name:e.target.value}))} required placeholder="请输入真实姓名" />
+                  </div>
                   {createForm.role === 'STUDENT' && (
                     <>
-                      <div>
-                        <Label>姓名</Label>
-                        <Input value={createForm.name} onChange={e=>setCreateForm(f=>({...f,name:e.target.value}))} required />
-                      </div>
                       <div>
                         <Label>学院/系</Label>
                         <Input value={createForm.department} onChange={e=>setCreateForm(f=>({...f,department:e.target.value}))} required />

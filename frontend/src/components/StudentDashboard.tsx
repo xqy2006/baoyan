@@ -70,7 +70,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
         const res = await fetch('/api/applications/mine', { credentials:'include' });
         if(!res.ok) return; const data = await res.json();
         const total = data.length || 0;
-        const systemApproved = data.filter((a:any)=> a.status==='SYSTEM_APPROVED' || a.status==='APPROVED').length;
+        // 更新状态判断逻辑，支持双审核状态
+        const systemApproved = data.filter((a:any)=>
+          a.status==='SYSTEM_APPROVED' ||
+          a.status==='FIRST_REVIEW_PENDING' ||
+          a.status==='FIRST_REVIEW_APPROVED' ||
+          a.status==='SECOND_REVIEW_PENDING' ||
+          a.status==='APPROVED'
+        ).length;
         setMyStats({ total, systemApproved });
         const map: Record<string,{id:string;status:string}> = {};
         data.forEach((a:any)=>{ if(a.activityId) map[String(a.activityId)] = { id:String(a.id), status:a.status }; });
@@ -206,6 +213,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
                   case 'SYSTEM_REJECTED': btnLabel = '重新申请'; break;
                   case 'APPROVED': btnLabel = '已通过'; break;
                   case 'SYSTEM_APPROVED': btnLabel = '待人工审核'; break;
+                  case 'FIRST_REVIEW_PENDING': btnLabel = '待第一审核'; break;
+                  case 'FIRST_REVIEW_APPROVED': btnLabel = '第一审核通过'; break;
+                  case 'FIRST_REVIEW_REJECTED': btnLabel = '第一审核拒绝'; break;
+                  case 'SECOND_REVIEW_PENDING': btnLabel = '待第二审核'; break;
                   case 'ADMIN_REVIEWING': btnLabel = '人工审核中'; break;
                   case 'SYSTEM_REVIEWING': btnLabel = '系统审核中'; break;
                   default: btnLabel = '查看';
@@ -318,4 +329,3 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ onApply }) =
     </div>
   );
 };
-

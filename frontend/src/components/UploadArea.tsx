@@ -63,6 +63,38 @@ export const UploadArea: React.FC = () => {
     setItems(prev => prev.filter(it => it.id !== id));
   };
 
+  const rowStyle: React.CSSProperties = {
+    padding: 12,
+    display: 'flex',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    fontSize: 14
+  };
+
+  const leftStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 0,
+    flex: 1
+  };
+
+  const nameStyle: React.CSSProperties = {
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    maxWidth: '70vw'
+  };
+
+  const rightStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8
+  };
+
   return (
     <div className="space-y-4">
       <div
@@ -91,11 +123,11 @@ export const UploadArea: React.FC = () => {
       {items.length>0 && (
         <div className="border rounded-md divide-y">
           {items.map(item => (
-            <div key={item.id} className="p-3 flex items-center justify-between text-sm">
-              <div className="flex items-center gap-3 truncate min-w-0">
+            <div key={item.id} style={rowStyle}>
+              <div style={leftStyle}>
                 <FileText className="h-4 w-4 text-gray-400" />
-                <div className="truncate">
-                  <div className="truncate font-medium">{item.name}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={nameStyle}>{item.name}</div>
                   <div className="text-xs text-gray-500">{(item.size/1024).toFixed(1)} KB</div>
                   <div className="text-xs mt-1">
                     {item.status === 'pending' && <span className="text-gray-500">等待上传</span>}
@@ -105,7 +137,7 @@ export const UploadArea: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div style={rightStyle}>
                 {item.status === 'uploading' && <Progress value={50} className="w-24" />}
                 {item.status !== 'uploading' && (
                   <button onClick={()=>removeItem(item.id)} className="text-gray-400 hover:text-red-600" title="移除">

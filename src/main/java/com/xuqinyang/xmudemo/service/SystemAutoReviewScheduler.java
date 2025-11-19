@@ -128,14 +128,14 @@ public class SystemAutoReviewScheduler {
         log.info("Processing system pre-review for application: {}", application.getId());
 
         try {
-            // 修复：系统审核通过后应该进入人工审核阶段，而不是直接通过
-            application.setStatus(ApplicationStatus.ADMIN_REVIEWING);
-            application.setSystemReviewComment("系统预审核通过，等待人工审核");
+            // 系统审核通过后进入第一次人工审核阶段（双审核流程）
+            application.setStatus(ApplicationStatus.FIRST_REVIEW_PENDING);
+            application.setSystemReviewComment("系统预审核通过，等待第一次人工审核");
             application.setSystemReviewedAt(LocalDateTime.now());
 
             applicationRepository.save(application);
 
-            log.info("Application {} passed system pre-review, moved to manual review queue", application.getId());
+            log.info("Application {} passed system pre-review, moved to first manual review queue", application.getId());
 
         } catch (Exception e) {
             log.error("Error during system pre-review for application: {}", application.getId(), e);

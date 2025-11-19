@@ -23,6 +23,10 @@ const statusMap: Record<string,string> = {
   SYSTEM_APPROVED: 'system_approved',
   SYSTEM_REJECTED: 'system_rejected',
   ADMIN_REVIEWING: 'admin_reviewing',
+  FIRST_REVIEW_PENDING: 'first_review_pending',
+  FIRST_REVIEW_APPROVED: 'first_review_approved',
+  FIRST_REVIEW_REJECTED: 'first_review_rejected',
+  SECOND_REVIEW_PENDING: 'second_review_pending',
   APPROVED: 'approved',
   REJECTED: 'rejected',
   CANCELLED: 'cancelled'
@@ -119,7 +123,14 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
           }
 
           if (statusFilter.length > 0) {
-            statusFilter.forEach(s => params.append('statuses', s));
+            statusFilter.forEach(key => {
+              const option = filterOptions.find(o => o.key === key);
+              if (option) {
+                option.statuses.forEach(s => params.append('statuses', s));
+              } else {
+                params.append('statuses', key);
+              }
+            });
           }
 
           url += '?' + params.toString();
@@ -176,7 +187,16 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
             sortDirection: 'DESC'
           });
           if (searchKeyword) params.append('search', searchKeyword);
-          if (statusFilter.length > 0) statusFilter.forEach(s => params.append('statuses', s));
+          if (statusFilter.length > 0) {
+            statusFilter.forEach(key => {
+              const option = filterOptions.find(o => o.key === key);
+              if (option) {
+                option.statuses.forEach(s => params.append('statuses', s));
+              } else {
+                params.append('statuses', key);
+              }
+            });
+          }
           url += '?' + params.toString();
         }
 
@@ -260,21 +280,26 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
     switch (status) {
       case 'pending': return { color: 'secondary', icon: Clock, text: '待系统审核', className: '' };
       case 'system_reviewing': return { color: 'default', icon: AlertTriangle, text: '系统审核中', className: '' };
-      case 'system_approved': return { color: 'default', icon: Eye, text: '待管理员审核', className: 'bg-blue-100 text-blue-800' };
-      case 'system_rejected': return { color: 'destructive', icon: XCircle, text: '系统未通过', className: '' };
+      case 'system_approved': return { color: 'default', icon: Eye, text: '待第一审核', className: 'bg-blue-100 text-blue-800' };
+      case 'system_rejected': return { color: 'destructive', icon: XCircle, text: '拒绝', className: '' };
+      case 'first_review_pending': return { color: 'default', icon: Eye, text: '待第一审核', className: 'bg-blue-100 text-blue-800' };
+      case 'first_review_approved': return { color: 'default', icon: CheckCircle, text: '待第二审核', className: 'bg-indigo-100 text-indigo-800' };
+      case 'first_review_rejected': return { color: 'destructive', icon: XCircle, text: '拒绝', className: 'bg-red-100 text-red-800' };
+      case 'second_review_pending': return { color: 'default', icon: Eye, text: '待第二审核', className: 'bg-indigo-100 text-indigo-800' };
       case 'admin_reviewing': return { color: 'default', icon: Eye, text: '人工审核中', className: '' };
-      case 'approved': return { color: 'default', icon: CheckCircle, text: '审核通过', className: 'bg-green-100 text-green-800' };
-      case 'rejected': return { color: 'destructive', icon: XCircle, text: '审核未通过', className: '' };
+      case 'approved': return { color: 'default', icon: CheckCircle, text: '通过', className: 'bg-green-100 text-green-800' };
+      case 'rejected': return { color: 'destructive', icon: XCircle, text: '拒绝', className: '' };
       case 'cancelled': return { color: 'outline', icon: XCircle, text: '已取消', className: 'bg-gray-200 text-gray-600' };
       default: return { color: 'secondary', icon: Clock, text: '未知状态', className: '' };
     }
   };
 
-  const allStatuses = [
-    { key: 'SYSTEM_REVIEWING', label: '系统审核中', color: 'bg-blue-500 hover:bg-blue-600' },
-    { key: 'ADMIN_REVIEWING', label: '人工审核中', color: 'bg-blue-500 hover:bg-blue-600' },
-    { key: 'APPROVED', label: '已通过', color: 'bg-green-500 hover:bg-green-600' },
-    { key: 'REJECTED', label: '已拒绝', color: 'bg-red-500 hover:bg-red-600' }
+  const filterOptions = [
+    { key: 'SYSTEM_REVIEWING', label: '系统审核中', color: 'bg-blue-500 hover:bg-blue-600', statuses: ['SYSTEM_REVIEWING'] },
+    { key: 'WAITING_FIRST', label: '等待第一次审核', color: 'bg-blue-500 hover:bg-blue-600', statuses: ['FIRST_REVIEW_PENDING', 'SYSTEM_APPROVED'] },
+    { key: 'WAITING_SECOND', label: '等待第二次审核', color: 'bg-blue-500 hover:bg-blue-600', statuses: ['SECOND_REVIEW_PENDING', 'FIRST_REVIEW_APPROVED'] },
+    { key: 'APPROVED', label: '通过', color: 'bg-green-500 hover:bg-green-600', statuses: ['APPROVED'] },
+    { key: 'REJECTED', label: '拒绝', color: 'bg-red-500 hover:bg-red-600', statuses: ['REJECTED', 'FIRST_REVIEW_REJECTED', 'SYSTEM_REJECTED'] }
   ];
 
   return (
@@ -312,15 +337,15 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
           {/* 状态筛选 */}
           <div className="flex flex-wrap gap-2">
             <span className="text-sm text-gray-600 self-center">筛选状态:</span>
-            {allStatuses.map(status => (
+            {filterOptions.map(option => (
               <Button
-                key={status.key}
-                variant={statusFilter.includes(status.key) ? 'default' : 'outline'}
+                key={option.key}
+                variant={statusFilter.includes(option.key) ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => handleStatusFilterChange(status.key)}
-                className={statusFilter.includes(status.key) ? `${status.color} text-white` : ''}
+                onClick={() => handleStatusFilterChange(option.key)}
+                className={statusFilter.includes(option.key) ? `${option.color} text-white` : ''}
               >
-                {status.label}
+                {option.label}
               </Button>
             ))}
             {statusFilter.length > 0 && (
@@ -406,7 +431,7 @@ export const ApplicationList: React.FC<ApplicationListProps> = ({ user, onReview
                           </div>
                         </>
                       )}
-                      {isAdmin && application.status!=='approved' && application.status!=='cancelled' && application.status!=='admin_reviewing' && application.status!=='system_reviewing' && application.status!=='system_approved' && application.status!=='rejected' && <Button size="xs" variant="outline" onClick={()=>handleCancel(application.id, (application as any).activityId)}>取消</Button>}
+                      {isAdmin && application.status!=='approved' && application.status!=='cancelled' && application.status!=='admin_reviewing' && application.status!=='system_reviewing' && application.status!=='system_approved' && application.status!=='rejected' && <Button size="xs" variant="outline" onClick={()=>handleCancel(application.id)}>取消</Button>}
                       {isAdmin && application.status==='cancelled' && application.activityId && <Button size="xs" variant="outline" onClick={()=> navigate(`/apply/${application.activityId}`)}>重新编辑</Button>}
                     </div>
                   )}

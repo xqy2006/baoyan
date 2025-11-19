@@ -1,10 +1,10 @@
 // 重建：根据后台成绩（academicScore 0-80，achievementScore 0-12，performanceScore 0-8）及 content.calculatedRaw(specRaw/perfRaw)
 import type { Application } from '../../App';
 
-interface AcademicItem { title:string; year?:string|number; level:string; personal:boolean; teamPos?:string; selfScore:number; basis:string; }
-interface PerformanceItem { title:string; year?:string|number; level:string; personal:boolean; teamPos?:string; selfScore:number; basis:string; }
+export interface AcademicItem { title:string; year?:string|number; level:string; personal:boolean; teamPos?:string; selfScore:number; basis:string; }
+export interface PerformanceItem { title:string; year?:string|number; level:string; personal:boolean; teamPos?:string; selfScore:number; basis:string; }
 
-function buildAcademicItems(app:Application): AcademicItem[] {
+export function buildAcademicItems(app:Application): AcademicItem[] {
   const items: AcademicItem[] = [];
   (app.academicAchievements?.publications||[]).forEach((p:any)=>{ if(!p.title) return; let base=0; switch(p.type){case 'A类':base=10;break;case 'B类':base=6;break;case 'C类':base=1;break;case '高水平中文':base=6;break;case '信息通信工程':base=10;break;} let ratio=0; if(p.totalAuthors<=1) ratio=1; else if(p.authorRank===1) ratio=0.8; else if(p.authorRank===2) ratio=0.2; else ratio=0; const score=+(base*ratio).toFixed(4); items.push({ title:p.title, year:p.publishYear, level:p.type, personal: ratio>=1, teamPos:p.authorRank?`第${p.authorRank}`:'', selfScore:score, basis:`${p.type}论文` }); });
   // 比赛加分逻辑拆分为多行，避免单行过长及解析混淆
@@ -62,7 +62,7 @@ function buildAcademicItems(app:Application): AcademicItem[] {
   return items.sort((a,b)=> b.selfScore - a.selfScore || String(a.title).localeCompare(b.title));
 }
 
-function buildPerformanceItems(app:Application): PerformanceItem[] {
+export function buildPerformanceItems(app:Application): PerformanceItem[] {
   const items: PerformanceItem[] = [];
   (app.comprehensivePerformance?.honors||[]).forEach((h:any)=>{ if(!h.title) return; let v=0; switch(h.level){case '国家级':v=2;break;case '省级':v=1;break;case '校级':v=0.2;break;} if(h.isCollective) v/=2; items.push({ title:h.title, year:h.year, level:h.level, personal:!h.isCollective, teamPos:h.isCollective?'集体':'', selfScore:+v.toFixed(4), basis:h.level }); });
   (app.comprehensivePerformance?.socialWork||[]).forEach((sw:any)=>{ if(!sw.position) return; const v=+(sw.score||0).toFixed(4); items.push({ title:sw.position, year:sw.year, level:'社会工作', personal:true, selfScore:v, basis:'社会工作' }); });
@@ -81,7 +81,7 @@ function buildHeader(){
   return {data:[row1,row2,row3],merges};
 }
 
-export async function exportApplicationsExcel(applications:Application[]){
+export async function exportApplicationsExcel(applications:Application[], filename:string = '推免通过学生汇总.xlsx'){
   const approved=(applications||[]).filter(a=>a.status==='approved'); if(!approved.length){ alert('暂无已审核通过的申请'); return; }
   const XLSX= await import('xlsx');
   const {data,merges}=buildHeader();
@@ -99,5 +99,5 @@ export async function exportApplicationsExcel(applications:Application[]){
     data.push(['','','','','','','','','','','(原始专长)',specRaw.toFixed(4),'(原始综合)',perfRaw.toFixed(4),'(加权合计)',assessTotal.toFixed(4),'','','条例：学术专长满分15折算12%，综合表现满分5折算8% → 总分=学业(80)+12+8','','','','','','','','','','','','','','']);
   });
   const ws=XLSX.utils.aoa_to_sheet(data); ws['!merges']=merges; ws['!cols']=data[2].map(()=>({wch:18}));
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'推免汇总'); XLSX.writeFile(wb,'推免通过学生汇总.xlsx');
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'推免汇总'); XLSX.writeFile(wb,filename);
 }

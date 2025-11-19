@@ -88,4 +88,63 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
 
     @Query(value = "SELECT COUNT(*) FROM application WHERE DATE(submitted_at) = CURDATE()", nativeQuery = true)
     long countTodayApplications();
+
+    @Query("SELECT a FROM Application a JOIN FETCH a.user u WHERE a.activity.id = :activityId")
+    List<Application> findByActivityIdWithUser(@Param("activityId") Long activityId);
+
+    // Custom Sort Methods for Reviewers
+    @Query("SELECT a FROM Application a JOIN FETCH a.user u JOIN FETCH a.activity ac " +
+           "ORDER BY " +
+           "CASE " +
+           "  WHEN a.status IN (com.xuqinyang.xmudemo.model.ApplicationStatus.FIRST_REVIEW_PENDING, com.xuqinyang.xmudemo.model.ApplicationStatus.SYSTEM_APPROVED) THEN 1 " +
+           "  WHEN a.status = com.xuqinyang.xmudemo.model.ApplicationStatus.SECOND_REVIEW_PENDING AND (a.firstReviewer.id IS NULL OR a.firstReviewer.id <> :currentUserId) THEN 2 " +
+           "  WHEN a.status = com.xuqinyang.xmudemo.model.ApplicationStatus.SECOND_REVIEW_PENDING AND a.firstReviewer.id = :currentUserId THEN 3 " +
+           "  ELSE 4 " +
+           "END ASC, " +
+           "a.submittedAt DESC")
+    Page<Application> findAllWithCustomSort(@Param("currentUserId") Long currentUserId, Pageable pageable);
+
+    @Query("SELECT a FROM Application a JOIN FETCH a.user u JOIN FETCH a.activity ac " +
+           "WHERE a.status IN :statuses " +
+           "ORDER BY " +
+           "CASE " +
+           "  WHEN a.status IN (com.xuqinyang.xmudemo.model.ApplicationStatus.FIRST_REVIEW_PENDING, com.xuqinyang.xmudemo.model.ApplicationStatus.SYSTEM_APPROVED) THEN 1 " +
+           "  WHEN a.status = com.xuqinyang.xmudemo.model.ApplicationStatus.SECOND_REVIEW_PENDING AND (a.firstReviewer.id IS NULL OR a.firstReviewer.id <> :currentUserId) THEN 2 " +
+           "  WHEN a.status = com.xuqinyang.xmudemo.model.ApplicationStatus.SECOND_REVIEW_PENDING AND a.firstReviewer.id = :currentUserId THEN 3 " +
+           "  ELSE 4 " +
+           "END ASC, " +
+           "a.submittedAt DESC")
+    Page<Application> findByStatusInWithCustomSort(@Param("currentUserId") Long currentUserId, @Param("statuses") List<ApplicationStatus> statuses, Pageable pageable);
+
+    @Query("SELECT a FROM Application a JOIN FETCH a.user u JOIN FETCH a.activity ac " +
+           "WHERE " +
+           "LOWER(u.studentId) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "LOWER(u.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "LOWER(ac.name) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
+           "ORDER BY " +
+           "CASE " +
+           "  WHEN a.status IN (com.xuqinyang.xmudemo.model.ApplicationStatus.FIRST_REVIEW_PENDING, com.xuqinyang.xmudemo.model.ApplicationStatus.SYSTEM_APPROVED) THEN 1 " +
+           "  WHEN a.status = com.xuqinyang.xmudemo.model.ApplicationStatus.SECOND_REVIEW_PENDING AND (a.firstReviewer.id IS NULL OR a.firstReviewer.id <> :currentUserId) THEN 2 " +
+           "  WHEN a.status = com.xuqinyang.xmudemo.model.ApplicationStatus.SECOND_REVIEW_PENDING AND a.firstReviewer.id = :currentUserId THEN 3 " +
+           "  ELSE 4 " +
+           "END ASC, " +
+           "a.submittedAt DESC")
+    Page<Application> searchApplicationsWithCustomSort(@Param("currentUserId") Long currentUserId, @Param("keyword") String keyword, Pageable pageable);
+
+    @Query("SELECT a FROM Application a JOIN FETCH a.user u JOIN FETCH a.activity ac " +
+           "WHERE " +
+           "a.status IN :statuses AND (" +
+           "LOWER(u.studentId) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "LOWER(u.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "LOWER(ac.name) LIKE LOWER(CONCAT('%', :keyword, '%'))" +
+           ") " +
+           "ORDER BY " +
+           "CASE " +
+           "  WHEN a.status IN (com.xuqinyang.xmudemo.model.ApplicationStatus.FIRST_REVIEW_PENDING, com.xuqinyang.xmudemo.model.ApplicationStatus.SYSTEM_APPROVED) THEN 1 " +
+           "  WHEN a.status = com.xuqinyang.xmudemo.model.ApplicationStatus.SECOND_REVIEW_PENDING AND (a.firstReviewer.id IS NULL OR a.firstReviewer.id <> :currentUserId) THEN 2 " +
+           "  WHEN a.status = com.xuqinyang.xmudemo.model.ApplicationStatus.SECOND_REVIEW_PENDING AND a.firstReviewer.id = :currentUserId THEN 3 " +
+           "  ELSE 4 " +
+           "END ASC, " +
+           "a.submittedAt DESC")
+    Page<Application> searchApplicationsByStatusWithCustomSort(@Param("currentUserId") Long currentUserId, @Param("keyword") String keyword, @Param("statuses") List<ApplicationStatus> statuses, Pageable pageable);
 }

@@ -137,7 +137,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
         setHasExisting(true);
         setStatus(a.status||'SYSTEM_REVIEWING');
         // 只有进行中/已通过才标记 submitted; 已取消/驳回允许重新编辑
-        const readonlyStatuses = ['SYSTEM_REVIEWING','SYSTEM_APPROVED','ADMIN_REVIEWING','APPROVED'];
+        const readonlyStatuses = ['SYSTEM_REVIEWING','SYSTEM_APPROVED','ADMIN_REVIEWING','FIRST_REVIEW_PENDING','FIRST_REVIEW_APPROVED','SECOND_REVIEW_PENDING','APPROVED'];
         if (readonlyStatuses.includes(a.status)) {
           setSubmittedAt(a.submittedAt || '已提交');
         } else {
@@ -407,7 +407,6 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
     if(!isEditable){ toast.error('当前状态不可提交'); return; }
     if(!validateBeforeSubmit()) return;
     if(submitting) return;
-    if(!transcriptFile){ setErrorMsg('请上传成绩单'); return; }
     setSubmitting(true);
     let newId = applicationId;
     try {
@@ -556,7 +555,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
 
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-4 sm:p-5 md:p-6 space-y-6 pb-safe-bottom md:pb-0">
+    <div className="w-full max-w-6xl mx-auto p-4 sm:p-5 md:p-6 space-y-6 pb-safe-bottom md:pb-0">
       {/* 顶部返回与标题 - 小屏压缩按钮文字 */}
       <div className="flex items-center gap-2 flex-wrap">
         <Button variant="ghost" size="sm" onClick={onCancel} className="shrink-0"><ArrowLeft className="w-4 h-4" /></Button>
@@ -654,8 +653,14 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
               </div>
             </div>
             <div>
-              <Label>成绩单 *</Label>
-              <TranscriptUploader onFile={(meta)=>{ setTranscriptFile(meta); markDirty(); }} existing={transcriptFile} disabled={!isEditable} localMode={!applicationId} />
+              <Label>成绩单</Label>
+              <TranscriptUploader
+                onFile={(meta)=>{ setTranscriptFile(meta); markDirty(); }}
+                existing={transcriptFile}
+                disabled={!isEditable}
+                localMode={!applicationId}
+              />
+              <p className="mt-1 text-[10px] text-gray-500">如有，请上传官方成绩单扫描件或清晰照片，便于人工审核；未上传时系统仅根据导入的成绩数据计算。</p>
             </div>
           </CardContent></Card>
 
@@ -728,7 +733,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
               disabled={!isEditable}
               placeholder="选择或搜索竞赛..."
             />
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label className="text-xs">级别</Label>
                 <Select value={comp.level} onValueChange={v=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,level:v as any}:x)); markDirty();}}>
@@ -754,13 +759,26 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-4 gap-4 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
               <div className="col-span-1"><Label className="text-xs">获奖年份</Label><Input type="number" value={comp.year} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,year:+e.target.value}:x)); markDirty();}} /></div>
               <div className="flex items-center space-x-2 col-span-1 mt-4"><Checkbox checked={comp.isTeam} onCheckedChange={chk=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,isTeam:!!chk}:x)); markDirty();}} /><Label className="text-xs m-0">团体赛</Label></div>
               {comp.isTeam && <div><Label className="text-xs">团队排名</Label><Input type="number" value={comp.teamRank} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,teamRank:+e.target.value}:x)); markDirty();}} /></div>}
               {comp.isTeam && <div><Label className="text-xs">团队人数</Label><Input type="number" value={comp.totalTeamMembers} onChange={e=>{setCompetitions(c=>c.map((x,idx)=>idx===i?{...x,totalTeamMembers:+e.target.value}:x)); markDirty();}} /></div>}
             </div>
-            {comp.isTeam && <p className="text-[11px] text-gray-500 -mt-2">若为团队赛：填写团队排名与总人数用于折算</p>}
+            {comp.isTeam && <p className="text-[11px] text-gray-500 -mt-2">若为团体赛：填写团队排名与总人数用于折算</p>}
+            <div>
+              <Label className="text-xs">证明材料</Label>
+              <ProofFileUploader
+                meta={comp.proofFile as any}
+                applicationId={applicationId}
+                disabled={!isEditable}
+                onChange={(m)=>{
+                  setCompetitions(list => list.map((x,idx)=> idx===i ? { ...x, proofFile: m as any } : x));
+                  markDirty();
+                }}
+              />
+              <p className="text-[10px] text-gray-500 mt-1">请上传竞赛获奖证书或官方结果截图，用于系统与人工审核。</p>
+            </div>
           </Card>)}</CardContent></Card>
 
           {/* 专利 / 软件著作权 */}
@@ -769,7 +787,7 @@ export const ApplicationForm: React.FC<ApplicationFormProps> = ({ activity, user
             {/* Patents / Software copyrights */}
             <Label className="text-xs">名称</Label>
             <Input placeholder="示例: 一种xxx系统" value={p.title} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,title:e.target.value}:x)); markDirty();}} />
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div><Label className="text-xs">授权号</Label><Input value={p.patentNumber} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,patentNumber:e.target.value}:x)); markDirty();}} /></div>
               <div><Label className="text-xs">作者排名</Label><Input type="number" value={p.authorRank} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,authorRank:+e.target.value}:x)); markDirty();}} /></div>
               <div><Label className="text-xs">授权年份</Label><Input type="number" value={p.grantYear} onChange={e=>{setPatents(list=>list.map((x,idx)=>idx===i?{...x,grantYear:+e.target.value}:x)); markDirty();}} /></div>

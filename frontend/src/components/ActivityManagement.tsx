@@ -9,12 +9,14 @@ import { Switch } from './ui/switch';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Plus, Edit3, Trash2, Calendar, Users, Settings } from 'lucide-react';
+import { Plus, Edit3, Trash2, Calendar, Users, Settings, BarChart2 } from 'lucide-react';
 import { Activity } from '../App';
 import { toast } from 'sonner';
 import { ConfirmDialog } from './ui/confirm-dialog';
+import { useNavigate } from 'react-router-dom';
 
 export const ActivityManagement: React.FC = () => {
+  const navigate = useNavigate();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -181,6 +183,14 @@ export const ActivityManagement: React.FC = () => {
                       <Button
                         variant="outline"
                         size="sm"
+                        onClick={() => navigate(`/activities/${activity.id}/stats`)}
+                        title="统计与名单"
+                      >
+                        <BarChart2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => { setEditingActivity(activity); setIsDialogOpen(true); }}
                       >
                         <Edit3 className="h-4 w-4" />
@@ -231,6 +241,14 @@ export const ActivityManagement: React.FC = () => {
                         checked={activity.isActive}
                         onCheckedChange={() => handleToggleActivity(activity.id)}
                       />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigate(`/activities/${activity.id}/stats`)}
+                        title="统计与名单"
+                      >
+                        <BarChart2 className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -382,7 +400,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, onSave, onCancel 
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="department">系别</Label>
           <Select
@@ -419,7 +437,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ activity, onSave, onCancel 
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="startTime">开始时间</Label>
           <Input

@@ -31,8 +31,17 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = () => {
     setLoading(true); setError('');
     try {
       // 优化：使用分页接口，只加载待审核的申请，按最新提交时间排序
-      const statusFilter = ['SYSTEM_REVIEWING', 'SYSTEM_APPROVED', 'ADMIN_REVIEWING', 'APPROVED', 'REJECTED']
-        .map(s => `statuses=${s}`).join('&');
+      const statusFilter = [
+        'SYSTEM_REVIEWING',
+        'SYSTEM_APPROVED',
+        'ADMIN_REVIEWING',
+        'FIRST_REVIEW_PENDING',
+        'FIRST_REVIEW_APPROVED',
+        'SECOND_REVIEW_PENDING',
+        'APPROVED',
+        'REJECTED',
+        'FIRST_REVIEW_REJECTED'
+      ].map(s => `statuses=${s}`).join('&');
       const params = `page=0&size=100&sortBy=submittedAt&sortDirection=DESC&${statusFilter}`;
 
       const res = await fetchWithAuth(`/api/applications/page?${params}`);
@@ -40,8 +49,14 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = () => {
       const pageData = await res.json();
       const data = pageData.content || [];
 
-      const inQueue = data.filter((a:any)=> ['SYSTEM_REVIEWING','SYSTEM_APPROVED','ADMIN_REVIEWING'].includes(a.status));
-      const done = data.filter((a:any)=> ['APPROVED','REJECTED'].includes(a.status));
+      const inQueue = data.filter((a:any)=> [
+        'SYSTEM_REVIEWING',
+        'SYSTEM_APPROVED',
+        'ADMIN_REVIEWING',
+        'FIRST_REVIEW_PENDING',
+        'SECOND_REVIEW_PENDING'
+      ].includes(a.status));
+      const done = data.filter((a:any)=> ['APPROVED','REJECTED','FIRST_REVIEW_REJECTED'].includes(a.status));
       setQueue(inQueue);
       setCompleted(done);
       const pendingReview = inQueue.filter((a:any)=> a.status==='SYSTEM_REVIEWING').length;
@@ -55,12 +70,26 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = () => {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'SYSTEM_APPROVED': return <Badge className="bg-blue-100 text-blue-800">待管理员</Badge>;
-      case 'SYSTEM_REVIEWING': return <Badge className="bg-amber-100 text-amber-800">系统审核中</Badge>;
-      case 'ADMIN_REVIEWING': return <Badge className="bg-indigo-100 text-indigo-800">人工中</Badge>;
-      case 'APPROVED': return <Badge className="bg-green-100 text-green-800">已通过</Badge>;
-      case 'REJECTED': return <Badge className="bg-red-100 text-red-800">已拒绝</Badge>;
-      default: return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
+      case 'SYSTEM_REVIEWING':
+        return <Badge className="bg-amber-100 text-amber-800">系统审核中</Badge>;
+      case 'SYSTEM_APPROVED':
+        return <Badge className="bg-blue-100 text-blue-800">待第一审核</Badge>;
+      case 'FIRST_REVIEW_PENDING':
+        return <Badge className="bg-blue-100 text-blue-800">待第一审核</Badge>;
+      case 'FIRST_REVIEW_APPROVED':
+        return <Badge className="bg-indigo-100 text-indigo-800">待第二审核</Badge>;
+      case 'SECOND_REVIEW_PENDING':
+        return <Badge className="bg-indigo-100 text-indigo-800">待第二审核</Badge>;
+      case 'ADMIN_REVIEWING':
+        return <Badge className="bg-indigo-100 text-indigo-800">人工审核中</Badge>;
+      case 'APPROVED':
+        return <Badge className="bg-green-100 text-green-800">通过</Badge>;
+      case 'REJECTED':
+        return <Badge className="bg-red-100 text-red-800">拒绝</Badge>;
+      case 'FIRST_REVIEW_REJECTED':
+        return <Badge className="bg-red-100 text-red-800">拒绝</Badge>;
+      default:
+        return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
     }
   };
 

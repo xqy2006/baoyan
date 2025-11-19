@@ -18,7 +18,7 @@ export const AdminDashboard: React.FC = () => {
       fetch('/api/admin/stats',{credentials:'include'}),
       fetch('/api/admin/department-stats',{credentials:'include'}),
       // 优化：使用分页接口，只加载待审核的申请
-      fetch('/api/applications/page?page=0&size=100&sortBy=submittedAt&sortDirection=DESC&statuses=SYSTEM_REVIEWING&statuses=SYSTEM_APPROVED&statuses=ADMIN_REVIEWING',{credentials:'include'})
+      fetch('/api/applications/page?page=0&size=100&sortBy=submittedAt&sortDirection=DESC&statuses=SYSTEM_REVIEWING&statuses=SYSTEM_APPROVED&statuses=ADMIN_REVIEWING&statuses=FIRST_REVIEW_PENDING&statuses=FIRST_REVIEW_APPROVED&statuses=SECOND_REVIEW_PENDING',{credentials:'include'})
     ]).then(async ([s,d,q])=>{
       if(!s.ok) throw new Error('统计接口失败');
       if(!d.ok) throw new Error('系别统计失败');
@@ -29,16 +29,19 @@ export const AdminDashboard: React.FC = () => {
       const qv = qData.content || []; // 从分页响应中获取content
 
       setStats(sv); setDeptStats(dv);
-      // 仅展示 system_approved / ADMIN_REVIEWING / SYSTEM_REVIEWING
+      // 仅展示待审核状态
       const mapStatus=(st:string)=>{
         switch(st){
           case 'SYSTEM_REVIEWING': return 'system_reviewing';
           case 'SYSTEM_APPROVED': return 'system_approved';
           case 'ADMIN_REVIEWING': return 'admin_reviewing';
+          case 'FIRST_REVIEW_PENDING': return 'first_review_pending';
+          case 'FIRST_REVIEW_APPROVED': return 'first_review_approved';
+          case 'SECOND_REVIEW_PENDING': return 'second_review_pending';
           default: return st.toLowerCase();
         }
       };
-      setPending(qv.filter((a:any)=>['SYSTEM_APPROVED','SYSTEM_REVIEWING','ADMIN_REVIEWING'].includes(a.status)).map((a:any)=>({
+      setPending(qv.filter((a:any)=>['SYSTEM_APPROVED','SYSTEM_REVIEWING','ADMIN_REVIEWING','FIRST_REVIEW_PENDING','FIRST_REVIEW_APPROVED','SECOND_REVIEW_PENDING'].includes(a.status)).map((a:any)=>({
         id: a.id,
         studentName: (a.content && JSON.parse(a.content).basicInfo?.name)||a.userStudentId||'—',
         studentId: a.userStudentId,

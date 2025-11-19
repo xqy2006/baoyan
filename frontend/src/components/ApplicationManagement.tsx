@@ -110,6 +110,10 @@ export const ApplicationManagement: React.FC = () => {
       SYSTEM_APPROVED: { variant: 'default', label: '系统通过' },
       SYSTEM_REJECTED: { variant: 'destructive', label: '系统拒绝' },
       ADMIN_REVIEWING: { variant: 'default', label: '人工审核中' },
+      FIRST_REVIEW_PENDING: { variant: 'default', label: '待第一审核' },
+      FIRST_REVIEW_APPROVED: { variant: 'default', label: '第一审核通过' },
+      FIRST_REVIEW_REJECTED: { variant: 'destructive', label: '第一审核拒绝' },
+      SECOND_REVIEW_PENDING: { variant: 'default', label: '待第二审核' },
       APPROVED: { variant: 'default', label: '通过' },
       REJECTED: { variant: 'destructive', label: '拒绝' },
       CANCELLED: { variant: 'secondary', label: '已取消' }
@@ -122,6 +126,10 @@ export const ApplicationManagement: React.FC = () => {
     'SYSTEM_REVIEWING',
     'SYSTEM_APPROVED',
     'ADMIN_REVIEWING',
+    'FIRST_REVIEW_PENDING',
+    'FIRST_REVIEW_APPROVED',
+    'FIRST_REVIEW_REJECTED',
+    'SECOND_REVIEW_PENDING',
     'APPROVED',
     'REJECTED'
   ];
@@ -248,4 +256,3 @@ export const ApplicationManagement: React.FC = () => {
     </div>
   );
 };
-

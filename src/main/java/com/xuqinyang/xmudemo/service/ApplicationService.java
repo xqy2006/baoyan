@@ -43,6 +43,8 @@ public class ApplicationService {
     private DistributedLockService distributedLockService;
     @Autowired
     private CacheService cacheService;
+    @Autowired
+    private DualReviewService dualReviewService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -159,6 +161,20 @@ public class ApplicationService {
 
     @Cacheable(value = "applications", key = "'user_' + #userId")
     public List<Application> getApplicationsByUserId(Long userId) { return applicationRepository.findByUser_Id(userId); }
+
+    /**
+     * 获取特定活动的所有申请（用于统计）
+     */
+    public List<Application> getApplicationsByActivityId(Long activityId) {
+        List<Application> apps = applicationRepository.findByActivityIdWithUser(activityId);
+        // 确保activity信息已加载
+        apps.forEach(app -> {
+            if (app.getActivity() != null) {
+                app.getActivity().getName();
+            }
+        });
+        return apps;
+    }
 
     @Transactional
     @CacheEvict(value = "applications", allEntries = true)
@@ -406,9 +422,9 @@ public class ApplicationService {
             recalcScores(app); // compute scores from content (academic based on GPA/rank)
             double academic = app.getAcademicScore()==null?0: app.getAcademicScore();
             if (academic >= 48) {
-                // 直接进入人工审核状态，而不是停留在system_approved
-                app.setStatus(ApplicationStatus.ADMIN_REVIEWING);
-                app.setSystemReviewComment("系统初审通过，学业得分=" + academic + "，已进入人工审核");
+                // 修改：进入第一审核员待审核状态（双审核流程）
+                app.setStatus(ApplicationStatus.FIRST_REVIEW_PENDING);
+                app.setSystemReviewComment("系统初审通过，学业得分=" + academic + "，已进入第一审核员审核");
             } else {
                 app.setStatus(ApplicationStatus.SYSTEM_REJECTED);
                 app.setSystemReviewComment("系统初审不通过，学业得分=" + academic);
@@ -437,17 +453,72 @@ public class ApplicationService {
     public Application adminReview(Long id, boolean approve, String comment) {
         return distributedLockService.executeWithLockAndRetry("application:adminReview:" + id, () -> {
             ensureAdminOrReviewer();
+
+            // 获取当前审核员信息
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String reviewerStudentId = auth.getName(); // getName() 返回的是 studentId
+            User reviewer = userRepository.findByStudentId(reviewerStudentId)
+                .orElseThrow(() -> new IllegalStateException("审核员不存在"));
+
             Application app = applicationRepository.findById(id).orElseThrow();
-            if (app.getStatus() != ApplicationStatus.ADMIN_REVIEWING) {
-                throw new IllegalStateException("非人工审核中");
+
+            // 检查申请状态是否适合审核
+            if (app.getStatus() != ApplicationStatus.SYSTEM_APPROVED &&
+                app.getStatus() != ApplicationStatus.FIRST_REVIEW_PENDING &&
+                app.getStatus() != ApplicationStatus.FIRST_REVIEW_APPROVED &&
+                app.getStatus() != ApplicationStatus.SECOND_REVIEW_PENDING &&
+                app.getStatus() != ApplicationStatus.ADMIN_REVIEWING) {
+                throw new IllegalStateException("当前状态不允许审核");
             }
+
             if(!approve && (comment==null || comment.isBlank())){
                 throw new IllegalStateException("拒绝操作必须填写审核意见");
             }
-            recalcScores(app); // ensure latest scores
-            app.setStatus(approve ? ApplicationStatus.APPROVED : ApplicationStatus.REJECTED);
-            app.setAdminReviewComment(comment);
-            app.setAdminReviewedAt(LocalDateTime.now());
+
+            recalcScores(app); // 确保分数最新
+
+            // 根据当前状态和审核员判断是第一次还是第二次审核
+            if (app.getStatus() == ApplicationStatus.SYSTEM_APPROVED ||
+                app.getStatus() == ApplicationStatus.FIRST_REVIEW_PENDING ||
+                app.getStatus() == ApplicationStatus.ADMIN_REVIEWING) {
+                // 第一次审核
+                app.setFirstReviewer(reviewer);
+                app.setFirstReviewerName(reviewer.getName());
+                app.setFirstReviewedAt(LocalDateTime.now());
+                app.setFirstReviewComment(comment);
+
+                if (approve) {
+                    // 第一审核员通过，进入第二审核
+                    app.setStatus(ApplicationStatus.FIRST_REVIEW_APPROVED);
+                } else {
+                    // 第一审核员拒绝，直接拒绝申请
+                    app.setStatus(ApplicationStatus.FIRST_REVIEW_REJECTED);
+                }
+            } else if (app.getStatus() == ApplicationStatus.FIRST_REVIEW_APPROVED ||
+                       app.getStatus() == ApplicationStatus.SECOND_REVIEW_PENDING) {
+                // 第二次审核
+                // 检查是否是同一个审核员
+                if (app.getFirstReviewer() != null &&
+                    app.getFirstReviewer().getId().equals(reviewer.getId())) {
+                    throw new IllegalStateException("不能由同一审核员进行两次审核");
+                }
+
+                app.setSecondReviewer(reviewer);
+                app.setSecondReviewerName(reviewer.getName());
+                app.setSecondReviewedAt(LocalDateTime.now());
+                app.setSecondReviewComment(comment);
+
+                if (approve) {
+                    // 第二审核员通过，最终批准
+                    app.setStatus(ApplicationStatus.APPROVED);
+                    app.setAdminReviewedAt(LocalDateTime.now());
+                } else {
+                    // 第二审核员拒绝，最终拒绝
+                    app.setStatus(ApplicationStatus.REJECTED);
+                    app.setAdminReviewedAt(LocalDateTime.now());
+                }
+            }
+
             Application saved = applicationRepository.save(app);
 
             // 清除缓存确保状态更新
@@ -463,9 +534,13 @@ public class ApplicationService {
         return applicationRepository.findByStatusIn(List.of(
                 ApplicationStatus.SYSTEM_REVIEWING,
                 ApplicationStatus.SYSTEM_APPROVED,
-                ApplicationStatus.ADMIN_REVIEWING,
+                ApplicationStatus.ADMIN_REVIEWING,  // 保留兼容
+                ApplicationStatus.FIRST_REVIEW_PENDING,
+                ApplicationStatus.FIRST_REVIEW_APPROVED,
+                ApplicationStatus.SECOND_REVIEW_PENDING,
                 ApplicationStatus.APPROVED,
-                ApplicationStatus.REJECTED
+                ApplicationStatus.REJECTED,
+                ApplicationStatus.FIRST_REVIEW_REJECTED
         ));
     }
 
@@ -1008,7 +1083,6 @@ public class ApplicationService {
             perfTotal += internshipScore + militaryScore;
             if(perfTotal>5) perfTotal=5; // 综合表现上限5分
 
-            perfRaw = perfTotal;
 
             // 保存计算详情到content中
             try {
@@ -1367,7 +1441,20 @@ public class ApplicationService {
         String prev = app.getAdminReviewComment();
         String marker = "【复核发起"+LocalDateTime.now()+"】"+(reason==null||reason.isBlank()?"":" "+reason.trim());
         app.setAdminReviewComment((prev==null?"":prev+"\n")+marker);
-        app.setStatus(ApplicationStatus.ADMIN_REVIEWING);
+
+        // 重新审核应该回到第一次审核状态，而不是旧的ADMIN_REVIEWING状态
+        app.setStatus(ApplicationStatus.FIRST_REVIEW_PENDING);
+
+        // 清除之前的审核员信息，以便重新分配
+        app.setFirstReviewer(null);
+        app.setFirstReviewerName(null);
+        app.setFirstReviewedAt(null);
+        app.setFirstReviewComment(null);
+        app.setSecondReviewer(null);
+        app.setSecondReviewerName(null);
+        app.setSecondReviewedAt(null);
+        app.setSecondReviewComment(null);
+
         Application saved = applicationRepository.save(app);
 
         // 清除缓存确保状态更新
@@ -1385,6 +1472,22 @@ public class ApplicationService {
             int page, int size, String sortBy, String sortDirection,
             String searchKeyword, List<ApplicationStatus> statuses) {
 
+        // Check if current user is a reviewer to apply custom sorting
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isReviewer = auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("REVIEWER"));
+        
+        Long currentUserId = null;
+        if (isReviewer) {
+             String studentId = auth.getName();
+             Optional<User> userOpt = userRepository.findByStudentId(studentId);
+             if (userOpt.isPresent()) {
+                 currentUserId = userOpt.get().getId();
+             } else {
+                 isReviewer = false;
+             }
+        }
+
         // 构建分页参数
         org.springframework.data.domain.Sort sort = sortDirection.equalsIgnoreCase("DESC")
             ? org.springframework.data.domain.Sort.by(sortBy).descending()
@@ -1394,25 +1497,47 @@ public class ApplicationService {
         org.springframework.data.domain.Page<Application> applicationPage;
 
         try {
-            // 根据参数选择合适的查询方法
-            if (searchKeyword != null && !searchKeyword.trim().isEmpty()) {
-                // 有搜索关键词
-                if (statuses != null && !statuses.isEmpty()) {
-                    // 搜索特定状态的申请
-                    applicationPage = applicationRepository.searchApplicationsByStatus(
-                        searchKeyword.trim(), statuses, pageable);
+            if (isReviewer && currentUserId != null) {
+                // Reviewer custom sorting logic
+                if (searchKeyword != null && !searchKeyword.trim().isEmpty()) {
+                    if (statuses != null && !statuses.isEmpty()) {
+                        applicationPage = applicationRepository.searchApplicationsByStatusWithCustomSort(
+                            currentUserId, searchKeyword.trim(), statuses, pageable);
+                    } else {
+                        applicationPage = applicationRepository.searchApplicationsWithCustomSort(
+                            currentUserId, searchKeyword.trim(), pageable);
+                    }
                 } else {
-                    // 搜索所有申请
-                    applicationPage = applicationRepository.searchApplications(searchKeyword.trim(), pageable);
+                    if (statuses != null && !statuses.isEmpty()) {
+                        applicationPage = applicationRepository.findByStatusInWithCustomSort(
+                            currentUserId, statuses, pageable);
+                    } else {
+                        applicationPage = applicationRepository.findAllWithCustomSort(
+                            currentUserId, pageable);
+                    }
                 }
             } else {
-                // 无搜索关键词
-                if (statuses != null && !statuses.isEmpty()) {
-                    // 查询特定状态
-                    applicationPage = applicationRepository.findByStatusInWithUserAndActivity(statuses, pageable);
+                // Standard logic for Admin/Student
+                // 根据参数选择合适的查询方法
+                if (searchKeyword != null && !searchKeyword.trim().isEmpty()) {
+                    // 有搜索关键词
+                    if (statuses != null && !statuses.isEmpty()) {
+                        // 搜索特定状态的申请
+                        applicationPage = applicationRepository.searchApplicationsByStatus(
+                            searchKeyword.trim(), statuses, pageable);
+                    } else {
+                        // 搜索所有申请
+                        applicationPage = applicationRepository.searchApplications(searchKeyword.trim(), pageable);
+                    }
                 } else {
-                    // 查询所有
-                    applicationPage = applicationRepository.findAllWithUserAndActivity(pageable);
+                    // 无搜索关键词
+                    if (statuses != null && !statuses.isEmpty()) {
+                        // 查询特定状态
+                        applicationPage = applicationRepository.findByStatusInWithUserAndActivity(statuses, pageable);
+                    } else {
+                        // 查询所有
+                        applicationPage = applicationRepository.findAllWithUserAndActivity(pageable);
+                    }
                 }
             }
         } catch (Exception e) {

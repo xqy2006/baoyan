@@ -84,6 +84,13 @@ public class ApplicationController {
                 m.put("adminReviewedAt", a.getAdminReviewedAt());
                 m.put("systemReviewComment", a.getSystemReviewComment());
                 m.put("adminReviewComment", a.getAdminReviewComment());
+                // 添加双审核员信息
+                m.put("firstReviewerName", a.getFirstReviewerName());
+                m.put("firstReviewedAt", a.getFirstReviewedAt());
+                m.put("firstReviewComment", a.getFirstReviewComment());
+                m.put("secondReviewerName", a.getSecondReviewerName());
+                m.put("secondReviewedAt", a.getSecondReviewedAt());
+                m.put("secondReviewComment", a.getSecondReviewComment());
                 m.put("academicScore", a.getAcademicScore());
                 m.put("achievementScore", a.getAchievementScore());
                 m.put("performanceScore", a.getPerformanceScore());
@@ -149,6 +156,13 @@ public class ApplicationController {
                         m.put("adminReviewedAt", a.getAdminReviewedAt());
                         m.put("systemReviewComment", a.getSystemReviewComment());
                         m.put("adminReviewComment", a.getAdminReviewComment());
+                        // 添加双审核员信息
+                        m.put("firstReviewerName", a.getFirstReviewerName());
+                        m.put("firstReviewedAt", a.getFirstReviewedAt());
+                        m.put("firstReviewComment", a.getFirstReviewComment());
+                        m.put("secondReviewerName", a.getSecondReviewerName());
+                        m.put("secondReviewedAt", a.getSecondReviewedAt());
+                        m.put("secondReviewComment", a.getSecondReviewComment());
                         m.put("academicScore", a.getAcademicScore());
                         m.put("achievementScore", a.getAchievementScore());
                         m.put("performanceScore", a.getPerformanceScore());
@@ -709,6 +723,13 @@ public class ApplicationController {
                 m.put("adminReviewedAt", a.getAdminReviewedAt());
                 m.put("systemReviewComment", a.getSystemReviewComment());
                 m.put("adminReviewComment", a.getAdminReviewComment());
+                // 添加双审核员信息
+                m.put("firstReviewerName", a.getFirstReviewerName());
+                m.put("firstReviewedAt", a.getFirstReviewedAt());
+                m.put("firstReviewComment", a.getFirstReviewComment());
+                m.put("secondReviewerName", a.getSecondReviewerName());
+                m.put("secondReviewedAt", a.getSecondReviewedAt());
+                m.put("secondReviewComment", a.getSecondReviewComment());
                 m.put("academicScore", a.getAcademicScore());
                 m.put("achievementScore", a.getAchievementScore());
                 m.put("performanceScore", a.getPerformanceScore());
@@ -869,6 +890,13 @@ public class ApplicationController {
                 m.put("adminReviewedAt", a.getAdminReviewedAt());
                 m.put("systemReviewComment", a.getSystemReviewComment());
                 m.put("adminReviewComment", a.getAdminReviewComment());
+                // 添加双审核员信息
+                m.put("firstReviewerName", a.getFirstReviewerName());
+                m.put("firstReviewedAt", a.getFirstReviewedAt());
+                m.put("firstReviewComment", a.getFirstReviewComment());
+                m.put("secondReviewerName", a.getSecondReviewerName());
+                m.put("secondReviewedAt", a.getSecondReviewedAt());
+                m.put("secondReviewComment", a.getSecondReviewComment());
                 m.put("academicScore", a.getAcademicScore());
                 m.put("achievementScore", a.getAchievementScore());
                 m.put("performanceScore", a.getPerformanceScore());
@@ -981,6 +1009,39 @@ public class ApplicationController {
         } catch (Exception e) {
             log.error("Error executing native query for application owner: {}", e.getMessage());
             return null;
+        }
+    }
+
+    @GetMapping("/activity/{activityId}")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<?> getApplicationsByActivity(@PathVariable Long activityId) {
+        try {
+            var apps = applicationService.getApplicationsByActivityId(activityId);
+            var out = apps.stream().map(a -> {
+                var m = new java.util.HashMap<String, Object>();
+                m.put("id", a.getId());
+                m.put("status", a.getStatus() == null ? null : a.getStatus().name());
+                m.put("submittedAt", a.getSubmittedAt());
+                m.put("academicScore", a.getAcademicScore());
+                m.put("achievementScore", a.getAchievementScore());
+                m.put("performanceScore", a.getPerformanceScore());
+                m.put("totalScore", a.getTotalScore());
+                
+                // User info
+                if (a.getUser() != null) {
+                    m.put("userStudentId", a.getUser().getStudentId());
+                    m.put("userName", a.getUser().getName());
+                    m.put("userDepartment", a.getUser().getDepartment());
+                    m.put("userMajor", a.getUser().getMajor());
+                }
+                
+                m.put("content", a.getContent());
+                return m;
+            }).toList();
+            return ResponseEntity.ok(out);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                .body(java.util.Map.of("error", "Failed to load applications: " + e.getMessage()));
         }
     }
 }

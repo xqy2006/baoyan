@@ -81,37 +81,129 @@ export const ProofFileUploader: React.FC<Props> = ({ meta, onChange, disabled, a
 
   const clear = () => { if(disabled) return; onChange(null); setPreview(null); };
 
+  const containerStyle: React.CSSProperties = {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: '#e5e7eb',
+    borderRadius: 6,
+    padding: 12,
+    display: 'flex',
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+    flexWrap: 'wrap'
+  };
+
+  const previewBox: React.CSSProperties = {
+    width: 80,
+    height: 80,
+    borderRadius: 6,
+    border: '1px solid #e5e7eb',
+    overflow: 'hidden',
+    flexShrink: 0
+  };
+
+  const infoBox: React.CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4
+  };
+
+  const nameStyle: React.CSSProperties = {
+    fontSize: 12,
+    color: '#4b5563',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    maxWidth: '70vw'
+  };
+
+  const actionsRow: React.CSSProperties = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 8,
+    alignItems: 'center'
+  };
+
   return (
-    <div className="space-y-2">
-      <div className={`border rounded-md p-3 flex items-center gap-3 ${disabled? 'opacity-60 cursor-not-allowed':'hover:border-blue-400 transition-colors'}`}>
-        {preview && isImageMeta(meta) ? (
-          <div className="relative group">
-            <img src={preview} alt={meta?.name||'image'} className="w-20 h-20 object-cover rounded border cursor-pointer" onClick={()=> setShowBig(true)} />
-            <button type="button" onClick={()=> setShowBig(true)} className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs transition"><Maximize2 className="w-4 h-4" /></button>
-          </div>
-        ) : (
-          <div className="w-20 h-20 flex items-center justify-center rounded border bg-gray-50 text-gray-400 text-xs select-none">IMG</div>
-        )}
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-gray-600 truncate" title={meta?.name || label || '图片证明'}>{meta?.name || label || '图片证明'}</p>
-          <div className="mt-1 flex gap-2 items-center">
-            <input type="file" accept="image/*" disabled={disabled||loading} id="pfu_input_tmp" className="hidden" onChange={handleSelect} />
-            <Button type="button" size="sm" variant="outline" disabled={disabled||loading} onClick={()=> document.getElementById('pfu_input_tmp')?.click()}>{loading? '处理中...' : (meta? '重新选择':'选择图片')}</Button>
-            {meta && !disabled && <Button type="button" size="sm" variant="destructive" onClick={clear}>删除</Button>}
-            {meta?.isLocal && <span className="text-[10px] px-1 py-0.5 rounded bg-orange-100 text-orange-700">本地</span>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={containerStyle}>
+        <div style={previewBox}>
+          {preview && isImageMeta(meta) ? (
+            <img
+              src={preview}
+              alt={meta?.name || 'image'}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+              onClick={() => setShowBig(true)}
+            />
+          ) : (
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#9ca3af' }}>
+              IMG
+            </div>
+          )}
+        </div>
+        <div style={infoBox}>
+          <p style={nameStyle} title={meta?.name || label || '图片证明'}>
+            {meta?.name || label || '图片证明'}
+          </p>
+          <div style={actionsRow}>
+            {/* 保持原有 input+Button 行为，仅把布局交给 style 控制 */}
+            <input type="file" accept="image/*" disabled={disabled||loading} id="pfu_input_tmp" style={{ display: 'none' }} onChange={handleSelect} />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={disabled||loading}
+              onClick={() => document.getElementById('pfu_input_tmp')?.click()}
+            >
+              {loading ? '处理中...' : (meta ? '重新选择' : '选择图片')}
+            </Button>
+            {meta && !disabled && (
+              <Button type="button" size="sm" variant="destructive" onClick={clear}>
+                删除
+              </Button>
+            )}
+            {meta?.isLocal && (
+              <span style={{ fontSize: 10, padding: '2px 4px', borderRadius: 4, backgroundColor: '#ffedd5', color: '#c2410c' }}>
+                本地
+              </span>
+            )}
           </div>
         </div>
       </div>
+      {/* 大图预览部分保留原逻辑，仅略微调整为内联 style */}
       {showBig && preview && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex flex-col items-center justify-center p-4" onClick={()=> setShowBig(false)}>
-          <div className="max-w-[90vw] max-h-[85vh] relative">
-            <img src={preview} alt="preview" className="max-w-full max-h-[85vh] object-contain rounded shadow" />
-            <button type="button" className="absolute -top-3 -right-3 bg-white rounded-full p-1 shadow" onClick={()=> setShowBig(false)}><X className="w-4 h-4" /></button>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16
+          }}
+          onClick={() => setShowBig(false)}
+        >
+          <div style={{ maxWidth: '90vw', maxHeight: '85vh', position: 'relative' }}>
+            <img src={preview} alt="preview" style={{ maxWidth: '100%', maxHeight: '85vh', objectFit: 'contain', borderRadius: 6, boxShadow: '0 10px 15px -3px rgba(0,0,0,0.5)' }} />
+            <button
+              type="button"
+              style={{ position: 'absolute', top: -12, right: -12, backgroundColor: '#ffffff', borderRadius: '9999px', padding: 4, border: 'none', cursor: 'pointer' }}
+              onClick={() => setShowBig(false)}
+            >
+              <X style={{ width: 16, height: 16 }} />
+            </button>
           </div>
-          <p className="text-xs text-gray-200 mt-2 truncate max-w-[90vw]">{meta?.name}</p>
+          <p style={{ fontSize: 12, color: '#e5e7eb', marginTop: 8, maxWidth: '90vw', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {meta?.name}
+          </p>
         </div>
       )}
     </div>
   );
 };
-

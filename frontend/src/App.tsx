@@ -16,6 +16,7 @@ import { ApplicationForm } from './components/ApplicationForm';
 import { Account } from './components/Account';
 import { NotFound } from './components/NotFound';
 import { NotificationHistory } from './components/NotificationHistory';
+import { ActivityStats } from './components/ActivityStats';
 import { User } from './context/AuthContext';
 import { Button } from './components/ui/button';
 import { useDeviceType } from './components/hooks/useDeviceType';
@@ -25,8 +26,9 @@ export type { User } from './context/AuthContext';
 export interface Activity { id:string; name:string; department:string; type:any; startTime:string; deadline:string; description:string; isActive:boolean; maxApplications?:number; }
 export interface Application {
   id: string;
+  activityId: string;
   activityName: string;
-  status: 'pending'|'system_reviewing'|'system_approved'|'system_rejected'|'admin_reviewing'|'approved'|'rejected'|'cancelled';
+  status: 'pending'|'system_reviewing'|'system_approved'|'system_rejected'|'first_review_pending'|'first_review_approved'|'first_review_rejected'|'second_review_pending'|'admin_reviewing'|'approved'|'rejected'|'cancelled';
   basicInfo: any;
   languageScores: any;
   academicAchievements: { publications:any[]; patents:any[]; competitions:any[]; innovationProjects:any[]; totalAcademicScore:number; };
@@ -40,12 +42,18 @@ export interface Application {
   adminReviewComment?: string;
   systemReviewedAt?: string;
   adminReviewedAt?: string;
+  firstReviewerName?: string;
+  firstReviewedAt?: string;
+  firstReviewComment?: string;
+  secondReviewerName?: string;
+  secondReviewedAt?: string;
+  secondReviewComment?: string;
   studentId?: string;
   studentName?: string;
   submittedAt?: string;
 }
 
-const RequireAuth: React.FC<{roles?:Array<User['role']>}> = ({ roles, children }) => {
+const RequireAuth: React.FC<{roles?:Array<User['role']>, children: React.ReactNode}> = ({ roles, children }) => {
   const { user, loading } = useAuth();
   if (loading) return <div className="min-h-screen flex items-center justify-center text-sm text-gray-500">加载中...</div>;
   if (!user) return <Navigate to="/login" replace />;
@@ -182,13 +190,27 @@ const ReviewPage: React.FC = () => {
       if(!res.ok) throw new Error('加载失败');
       const data = await res.json();
       const content = data.content? JSON.parse(data.content):{};
-      const mapStatus: Record<string, Application['status']> = { DRAFT:'pending', SYSTEM_REVIEWING:'system_reviewing', SYSTEM_APPROVED:'system_approved', SYSTEM_REJECTED:'system_rejected', ADMIN_REVIEWING:'admin_reviewing', APPROVED:'approved', REJECTED:'rejected', CANCELLED:'cancelled' };
+      const mapStatus: Record<string, Application['status']> = {
+        DRAFT:'pending',
+        SYSTEM_REVIEWING:'system_reviewing',
+        SYSTEM_APPROVED:'system_approved',
+        SYSTEM_REJECTED:'system_rejected',
+        ADMIN_REVIEWING:'admin_reviewing',
+        FIRST_REVIEW_PENDING:'first_review_pending',
+        FIRST_REVIEW_APPROVED:'first_review_approved',
+        FIRST_REVIEW_REJECTED:'first_review_rejected',
+        SECOND_REVIEW_PENDING:'second_review_pending',
+        APPROVED:'approved',
+        REJECTED:'rejected',
+        CANCELLED:'cancelled'
+      };
       const academicScore = (typeof data.academicScore === 'number')? data.academicScore : (content.calculatedScores?.academicScore||0);
       const achievementScore = (typeof data.achievementScore === 'number')? data.achievementScore : (content.calculatedScores?.academicAchievementScore||0);
       const performanceScore = (typeof data.performanceScore === 'number')? data.performanceScore : (content.calculatedScores?.performanceScore||0);
       const totalScore = (typeof data.totalScore === 'number')? data.totalScore : (content.calculatedScores?.totalScore|| (academicScore + achievementScore + performanceScore));
       setApplication({
         id: String(data.id),
+        activityId: String(data.activityId || ''),
         activityName: data.activityName || '活动',
         status: mapStatus[data.status] || 'pending',
         basicInfo: content.basicInfo || { name:'-', studentId:'-', gender:'男', department:'-', major:'-', gpa:0, academicRanking:0, totalStudents:0 },
@@ -203,7 +225,14 @@ const ReviewPage: React.FC = () => {
         systemReviewComment: data.systemReviewComment,
         adminReviewComment: data.adminReviewComment,
         systemReviewedAt: data.systemReviewedAt,
-        adminReviewedAt: data.adminReviewedAt
+        adminReviewedAt: data.adminReviewedAt,
+        // 添加双审核员字段
+        firstReviewerName: data.firstReviewerName,
+        firstReviewedAt: data.firstReviewedAt,
+        firstReviewComment: data.firstReviewComment,
+        secondReviewerName: data.secondReviewerName,
+        secondReviewedAt: data.secondReviewedAt,
+        secondReviewComment: data.secondReviewComment
       });
     } catch(e:any){ setError(e.message);} finally{ setLoading(false);} })();},[id, fetchWithAuth]);
   if (loading) return <div className="p-4 text-sm text-gray-500">加载中...</div>;
@@ -249,8 +278,13 @@ const App: React.FC = () => {
       <Route path="/" element={<RequireAuth><Shell><DashboardSwitch/></Shell></RequireAuth>} />
       <Route path="/applications" element={<RequireAuth><Shell><ApplicationList user={user as any} onReview={(app)=>navigate(`/review/${app.id}`)} /></Shell></RequireAuth>} />
       <Route path="/review/:id" element={<RequireAuth roles={['ADMIN','REVIEWER','STUDENT']}><Shell><ReviewPage/></Shell></RequireAuth>} />
+import { ActivityStats } from './components/ActivityStats';
+
+// ...existing code...
+
       <Route path="/apply/:activityId" element={<RequireAuth roles={['STUDENT']}><Shell><ApplyPage/></Shell></RequireAuth>} />
       <Route path="/activities" element={<RequireAuth roles={['ADMIN']}><Shell><ActivityManagement/></Shell></RequireAuth>} />
+      <Route path="/activities/:id/stats" element={<RequireAuth roles={['ADMIN']}><Shell><ActivityStats/></Shell></RequireAuth>} />
       <Route path="/import" element={<RequireAuth roles={['ADMIN']}><Shell><DataImport role={user?.role||'STUDENT'} /></Shell></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth roles={['ADMIN']}><Shell><SystemSettings/></Shell></RequireAuth>} />
       <Route path="/account" element={<RequireAuth><Shell><Account role={user?.role||'STUDENT'} /></Shell></RequireAuth>} />
